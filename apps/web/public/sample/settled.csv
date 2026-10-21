@@ -1,0 +1,10 @@
+name,wantsToBeCaptain,isCaptain,teamName,teamLogo,openingBalance,department,plays
+Asha Raman,true,true,Paper Boats,paper-boats.svg,100000,Design,quiz
+Neel Kapoor,true,true,Night Shift,night-shift.svg,100000,Operations,football
+Meher Qureshi,true,true,Slow Jam,slow-jam.svg,100000,People,badminton
+Rohan Iyer,false,false,,,,Engineering,cricket
+Kabir Anand,true,false,,,,Finance,chess
+Sana Sheikh,false,false,,,,Support,table tennis
+Dev Menon,false,false,,,,Engineering,football
+Farah Joseph,true,false,,,,Design,quiz
+Imran Bedi,false,false,,,,Sales,cricket

@@ -1,0 +1,11 @@
+{
+  "name": "playverse",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @playverse/web dev",
+    "db:generate": "pnpm --filter @playverse/db generate",
+    "db:migrate": "pnpm --filter @playverse/db migrate",
+    "db:seed": "pnpm --filter @playverse/web seed",
+    "stack": "docker compose up --build"
+  }
+}
