@@ -35,7 +35,7 @@ async function captainPersonIds(tx: Tx, tournamentId: string) {
   return new Set(rows.map((row) => row.personId));
 }
 
-async function advance(tx: Tx, tournamentId: string) {
+export async function openNextLot(tx: Tx, tournamentId: string) {
   const captains = await captainPersonIds(tx, tournamentId);
   const available = await tx
     .select({
@@ -75,31 +75,6 @@ async function advance(tx: Tx, tournamentId: string) {
     await tx.insert(auctionState).values({ tournamentId, ...nextState });
   }
   return next?.name ?? null;
-}
-
-export async function bringNextPlayer() {
-  const db = getDb();
-  return db.transaction(async (tx) => {
-    const tournament = await requireActive(tx);
-    const [state] = await tx
-      .select()
-      .from(auctionState)
-      .where(eq(auctionState.tournamentId, tournament.id))
-      .limit(1);
-    if (state?.status === "open") {
-      throw new Error("Finish the player on the block with Final or Unsold");
-    }
-    const name = await advance(tx, tournament.id);
-    await tx.insert(activityLog).values({
-      tournamentId: tournament.id,
-      actor: "admin",
-      action: "auction.next",
-      entityType: "auction",
-      entityId: tournament.id,
-      payload: { playerName: name },
-    });
-    return name;
-  });
 }
 
 export async function placeBid(teamId: string, amount: number) {
@@ -218,7 +193,7 @@ export async function finalizeBid() {
         amount: high.amount,
       },
     });
-    await advance(tx, tournament.id);
+    await openNextLot(tx, tournament.id);
   });
 }
 
@@ -255,6 +230,6 @@ export async function markUnsold() {
       entityId: state.tournamentPlayerId,
       payload: { playerName: player?.name ?? "" },
     });
-    await advance(tx, tournament.id);
+    await openNextLot(tx, tournament.id);
   });
 }

@@ -11,7 +11,7 @@ import {
   SESSION_COOKIE,
   verifySessionToken,
 } from "../auth";
-import { bringNextPlayer, finalizeBid, markUnsold, placeBid } from "../auction";
+import { finalizeBid, markUnsold, placeBid } from "../auction";
 import { createGame, saveGame } from "../games";
 import {
   importSettledCsv,
@@ -223,17 +223,6 @@ export async function unsoldAction(): Promise<ActionResult> {
     await markUnsold();
     refresh();
     return { ok: true };
-  } catch (error) {
-    return fail(error);
-  }
-}
-
-export async function nextPlayerAction(): Promise<ActionResult> {
-  try {
-    await assertAdmin();
-    const name = await bringNextPlayer();
-    refresh();
-    return { ok: true, message: name ? `${name} is on the block.` : "No players left in the pool." };
   } catch (error) {
     return fail(error);
   }

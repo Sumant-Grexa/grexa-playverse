@@ -2,12 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PlayerStage } from "@/components/player-stage";
-import {
-  finalizeBidAction,
-  nextPlayerAction,
-  placeBidAction,
-  unsoldAction,
-} from "@/lib/actions/admin";
+import { finalizeBidAction, placeBidAction, unsoldAction } from "@/lib/actions/admin";
 import { formatMoney } from "@/lib/format";
 import type { LivePayload } from "@/lib/types";
 
@@ -85,14 +80,6 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
           className="btn btn-danger"
         >
           Unsold
-        </button>
-        <button
-          type="button"
-          disabled={pending || live.state.status === "open"}
-          onClick={() => run(() => nextPlayerAction())}
-          className="btn btn-gold"
-        >
-          Next player
         </button>
       </div>
       {error ? <p className="text-gold">{error}</p> : null}

@@ -11,6 +11,7 @@ import {
   tournaments,
 } from "@playverse/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { openNextLot } from "./auction";
 import { column, hasColumn, parseCsv } from "./csv";
 import { safeName, saveUpload } from "./uploads";
 
@@ -192,6 +193,7 @@ export async function importSettledCsv(input: {
       tournamentId: input.tournamentId,
       status: "idle",
     });
+    await openNextLot(tx, input.tournamentId);
 
     await tx.insert(activityLog).values({
       tournamentId: input.tournamentId,
@@ -268,16 +270,7 @@ export async function reassignCaptain(input: {
         .update(tournamentPlayers)
         .set({ status: "available" })
         .where(eq(tournamentPlayers.id, player.id));
-      await tx
-        .update(auctionState)
-        .set({
-          status: "idle",
-          tournamentPlayerId: null,
-          currentAmount: null,
-          currentTeamId: null,
-          updatedAt: now,
-        })
-        .where(eq(auctionState.tournamentId, input.tournamentId));
+      await openNextLot(tx, input.tournamentId);
     }
 
     await tx.insert(activityLog).values({
