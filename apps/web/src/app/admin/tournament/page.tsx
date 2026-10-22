@@ -34,9 +34,7 @@ export default async function TournamentPage({
               <a
                 key={tournament.id}
                 href={`/admin/tournament?tournament=${tournament.id}`}
-                className={`rounded-full border px-4 py-2 text-sm ${
-                  desk.selected?.id === tournament.id ? "border-bid bg-bid text-ink" : "border-sage/60"
-                }`}
+                className={desk.selected?.id === tournament.id ? "nav-link nav-link-current" : "nav-link"}
               >
                 {tournament.name}
                 {tournament.status === "active" ? " · live" : ""}

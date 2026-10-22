@@ -28,6 +28,16 @@ export type LivePayload = {
     captainName: string | null;
     squadCount: number;
   }[];
+  ceremony: null | {
+    teams: {
+      id: string;
+      name: string;
+      logoUrl: string | null;
+      captainName: string | null;
+      captainPhotoUrl: string | null;
+      players: string[];
+    }[];
+  };
 };
 
 export type LeaderboardPayload = {
@@ -38,6 +48,7 @@ export type LeaderboardPayload = {
     teamName: string;
     logoUrl: string | null;
     total: number;
+    squadGap: number;
   }[];
   games: {
     id: string;
@@ -83,6 +94,8 @@ export type TournamentDesk = {
       captainPersonId: string | null;
       captainName: string | null;
       squad: { tournamentPlayerId: string; name: string; refundAmount: number }[];
+      checks: { label: string; ok: boolean | null }[];
+      squadGap: number;
     }[];
     players: {
       tournamentPlayerId: string;

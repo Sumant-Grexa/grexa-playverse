@@ -52,9 +52,14 @@ export function LeaderboardView({ initial }: { initial: LeaderboardPayload }) {
               <li key={team.teamId}>
                 <div className="mb-2 flex items-baseline justify-between gap-3">
                   <span className="text-xl text-paper">{team.teamName}</span>
-                  <span className="font-sans text-3xl font-semibold text-gold">{team.total}</span>
+                  <span className={`font-sans text-3xl font-semibold ${team.total < 0 ? "text-danger" : "text-gold"}`}>
+                    {team.total}
+                  </span>
                 </div>
-                <Bar value={team.total} scale={board.scale} />
+                {team.squadGap < 0 ? (
+                  <p className="mb-2 text-sm text-mist/70">Squad gap {team.squadGap}</p>
+                ) : null}
+                {team.total > 0 ? <Bar value={team.total} scale={board.scale} /> : null}
               </li>
             ))}
           </ol>

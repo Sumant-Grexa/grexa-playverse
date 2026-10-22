@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ClosingShow } from "@/components/closing-show";
 import { PlayerStage } from "@/components/player-stage";
 import type { LivePayload } from "@/lib/types";
 
@@ -26,18 +27,22 @@ export function LiveBoard({ initial }: { initial: LivePayload }) {
     };
   }, []);
 
+  if (live.ceremony) {
+    return <ClosingShow teams={live.ceremony.teams} />;
+  }
+
   return (
-    <div className="flex w-full justify-center px-4 py-6">
-      <div className="flex items-start gap-12 sm:gap-20">
-        <p className="brand-stack text-bid" aria-label="Grexa Playverse">
-          {["GREXA", "PLAYVERSE"].map((word) => (
-            <span key={word} className="brand-word" aria-hidden="true">
-              {word.split("").map((letter, index) => (
-                <span key={`${word}-${index}`}>{letter}</span>
-              ))}
-            </span>
-          ))}
-        </p>
+    <div className="flex w-full items-start gap-10 px-4 py-8 sm:gap-14 lg:gap-20 lg:px-8">
+      <p className="brand-stack shrink-0 text-bid" aria-label="Grexa Playverse">
+        {["GREXA", "PLAYVERSE"].map((word) => (
+          <span key={word} className="brand-word" aria-hidden="true">
+            {word.split("").map((letter, index) => (
+              <span key={`${word}-${index}`}>{letter}</span>
+            ))}
+          </span>
+        ))}
+      </p>
+      <div className="min-w-0 flex-1">
         <PlayerStage live={live} />
       </div>
     </div>

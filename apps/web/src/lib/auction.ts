@@ -11,6 +11,7 @@ import {
   tournaments,
 } from "@playverse/db";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { bidProblem, CRORE, memberFact, overDepartmentCap } from "./rules";
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
@@ -78,9 +79,6 @@ export async function openNextLot(tx: Tx, tournamentId: string) {
 }
 
 export async function placeBid(teamId: string, amount: number) {
-  if (!Number.isInteger(amount) || amount < 0) {
-    throw new Error("Enter the bid as a whole number");
-  }
   const db = getDb();
   await db.transaction(async (tx) => {
     const tournament = await requireActive(tx);
@@ -98,6 +96,8 @@ export async function placeBid(teamId: string, amount: number) {
       .where(and(eq(tournamentTeams.id, teamId), eq(tournamentTeams.tournamentId, tournament.id)))
       .limit(1);
     if (!team) throw new Error("That team is not in this tournament");
+    const problem = bidProblem(amount, state.currentAmount);
+    if (problem) throw new Error(problem);
 
     await tx.insert(bids).values({
       tournamentId: tournament.id,
@@ -149,6 +149,37 @@ export async function finalizeBid() {
       return b.createdAt.getTime() - a.createdAt.getTime();
     })[0];
     if (!high) throw new Error("No team has bid yet");
+
+    const [incoming] = await tx
+      .select({ formAnswers: tournamentPlayers.formAnswers })
+      .from(tournamentPlayers)
+      .where(eq(tournamentPlayers.id, state.tournamentPlayerId))
+      .limit(1);
+    const onTeam = await tx
+      .select({ formAnswers: tournamentPlayers.formAnswers })
+      .from(squadMembers)
+      .innerJoin(tournamentPlayers, eq(tournamentPlayers.id, squadMembers.tournamentPlayerId))
+      .where(and(eq(squadMembers.tournamentTeamId, high.tournamentTeamId), isNull(squadMembers.leftAt)));
+    const [captain] = await tx
+      .select({ formAnswers: tournamentPlayers.formAnswers })
+      .from(captaincies)
+      .innerJoin(
+        tournamentPlayers,
+        and(
+          eq(tournamentPlayers.personId, captaincies.personId),
+          eq(tournamentPlayers.tournamentId, tournament.id),
+        ),
+      )
+      .where(and(eq(captaincies.tournamentTeamId, high.tournamentTeamId), isNull(captaincies.endedAt)))
+      .limit(1);
+    const cap = overDepartmentCap(
+      [...onTeam, captain].flatMap((member) => {
+        const department = member ? memberFact(member.formAnswers).department : "";
+        return department ? [department] : [];
+      }),
+      memberFact(incoming?.formAnswers).department,
+    );
+    if (cap) throw new Error(cap);
 
     await tx.update(bids).set({ status: "won" }).where(eq(bids.id, high.id));
     const others = placed.filter((bid) => bid.id !== high.id).map((bid) => bid.id);
@@ -231,5 +262,51 @@ export async function markUnsold() {
       payload: { playerName: player?.name ?? "" },
     });
     await openNextLot(tx, tournament.id);
+  });
+}
+
+export async function resetTestAuction() {
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    const tournament = await requireActive(tx);
+    await tx.execute(sql`
+      delete from brownie_points
+      where game_standing_id in (
+        select game_standings.id
+        from game_standings
+        join games on games.id = game_standings.game_id
+        where games.tournament_id = ${tournament.id}
+      )
+    `);
+    await tx.execute(sql`
+      delete from game_standings
+      where game_id in (select id from games where tournament_id = ${tournament.id})
+    `);
+    await tx.execute(sql`delete from games where tournament_id = ${tournament.id}`);
+    await tx.execute(sql`delete from bids where tournament_id = ${tournament.id}`);
+    await tx.execute(sql`
+      delete from squad_members
+      where tournament_team_id in (
+        select id from tournament_teams where tournament_id = ${tournament.id}
+      )
+    `);
+    await tx
+      .update(tournamentPlayers)
+      .set({ status: "available" })
+      .where(eq(tournamentPlayers.tournamentId, tournament.id));
+    await tx
+      .update(tournamentTeams)
+      .set({ openingBalance: CRORE })
+      .where(eq(tournamentTeams.tournamentId, tournament.id));
+    const playerName = await openNextLot(tx, tournament.id);
+    await tx.insert(activityLog).values({
+      tournamentId: tournament.id,
+      actor: "admin",
+      action: "auction.reset",
+      entityType: "tournament",
+      entityId: tournament.id,
+      payload: { playerName },
+    });
+    return playerName;
   });
 }

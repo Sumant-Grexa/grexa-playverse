@@ -16,6 +16,7 @@ import {
   tournaments,
 } from "@playverse/db";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { memberFact, openingPurse, squadChecks, squadGap } from "./rules";
 import { mediaUrl } from "./uploads";
 import type { LeaderboardPayload, LivePayload, TournamentDesk, TournamentSummary } from "./types";
 
@@ -62,6 +63,7 @@ export async function getLive(): Promise<LivePayload> {
       player: null,
       tape: [],
       teams: [],
+      ceremony: null,
     };
   }
   const db = getDb();
@@ -89,6 +91,7 @@ async function buildLive(
       teamId: captaincies.tournamentTeamId,
       personId: captaincies.personId,
       name: people.name,
+      photoPath: people.photoPath,
     })
     .from(captaincies)
     .innerJoin(tournamentTeams, eq(tournamentTeams.id, captaincies.tournamentTeamId))
@@ -181,6 +184,52 @@ async function buildLive(
 
   const currentTeam = teams.find((team) => team.id === state?.currentTeamId);
 
+  const [settled] = await db
+    .select({ id: tournamentPlayers.id })
+    .from(tournamentPlayers)
+    .where(
+      and(
+        eq(tournamentPlayers.tournamentId, tournament.id),
+        inArray(tournamentPlayers.status, ["sold", "unsold"]),
+      ),
+    )
+    .limit(1);
+  const auctionOver = (state?.status ?? "idle") === "idle" && waiting === 0 && Boolean(settled);
+
+  let ceremony: LivePayload["ceremony"] = null;
+  if (auctionOver) {
+    const memberRows = await db
+      .select({
+        teamId: squadMembers.tournamentTeamId,
+        name: people.name,
+      })
+      .from(squadMembers)
+      .innerJoin(tournamentPlayers, eq(tournamentPlayers.id, squadMembers.tournamentPlayerId))
+      .innerJoin(people, eq(people.id, tournamentPlayers.personId))
+      .innerJoin(tournamentTeams, eq(tournamentTeams.id, squadMembers.tournamentTeamId))
+      .where(and(eq(tournamentTeams.tournamentId, tournament.id), isNull(squadMembers.leftAt)))
+      .orderBy(asc(squadMembers.joinedAt));
+    const playersByTeam = new Map<string, string[]>();
+    for (const row of memberRows) {
+      const list = playersByTeam.get(row.teamId) ?? [];
+      list.push(row.name);
+      playersByTeam.set(row.teamId, list);
+    }
+    ceremony = {
+      teams: teams.map((team) => {
+        const captain = captainByTeam.get(team.id);
+        return {
+          id: team.id,
+          name: team.name,
+          logoUrl: mediaUrl(team.logoPath),
+          captainName: captain?.name ?? null,
+          captainPhotoUrl: mediaUrl(captain?.photoPath),
+          players: playersByTeam.get(team.id) ?? [],
+        };
+      }),
+    };
+  }
+
   return {
     tournament: {
       id: tournament.id,
@@ -203,11 +252,12 @@ async function buildLive(
         id: team.id,
         name: team.name,
         logoUrl: mediaUrl(team.logoPath),
-        balance: team.openingBalance == null ? null : team.openingBalance - spent,
+        balance: openingPurse(team.openingBalance) - spent,
         captainName: captainByTeam.get(team.id)?.name ?? null,
         squadCount: squadCount.get(team.id) ?? 0,
       };
     }),
+    ceremony,
   };
 }
 
@@ -272,7 +322,33 @@ export async function getLeaderboard(): Promise<LeaderboardPayload> {
   }
 
   const teamById = new Map(teamRows.map((team) => [team.id, team]));
-  const totals = new Map<string, number>(teamRows.map((team) => [team.id, 0]));
+  const spentRows = await db
+    .select({
+      teamId: bids.tournamentTeamId,
+      spent: sql<number>`coalesce(sum(${bids.amount}), 0)::int`,
+    })
+    .from(bids)
+    .where(and(eq(bids.tournamentId, tournament.id), eq(bids.status, "won")))
+    .groupBy(bids.tournamentTeamId);
+  const spentByTeam = new Map(spentRows.map((row) => [row.teamId, Number(row.spent)]));
+  const squadRows = await db
+    .select({ teamId: squadMembers.tournamentTeamId })
+    .from(squadMembers)
+    .innerJoin(tournamentTeams, eq(tournamentTeams.id, squadMembers.tournamentTeamId))
+    .where(and(eq(tournamentTeams.tournamentId, tournament.id), isNull(squadMembers.leftAt)));
+  const squadCount = new Map<string, number>();
+  for (const row of squadRows) squadCount.set(row.teamId, (squadCount.get(row.teamId) ?? 0) + 1);
+  const gaps = new Map(
+    teamRows.map((team) => [
+      team.id,
+      squadGap({
+        spent: spentByTeam.get(team.id) ?? 0,
+        squadCount: squadCount.get(team.id) ?? 0,
+        openingBalance: team.openingBalance,
+      }),
+    ]),
+  );
+  const totals = new Map<string, number>(teamRows.map((team) => [team.id, gaps.get(team.id) ?? 0]));
 
   const gamePayload = gameRows.map((game) => {
     const rows = standingRows
@@ -314,6 +390,7 @@ export async function getLeaderboard(): Promise<LeaderboardPayload> {
       teamName: team.name,
       logoUrl: mediaUrl(team.logoPath),
       total: totals.get(team.id) ?? 0,
+      squadGap: gaps.get(team.id) ?? 0,
     })),
     games: gamePayload,
   };
@@ -340,10 +417,18 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
       teamId: captaincies.tournamentTeamId,
       personId: people.id,
       name: people.name,
+      formAnswers: tournamentPlayers.formAnswers,
     })
     .from(captaincies)
     .innerJoin(people, eq(people.id, captaincies.personId))
     .innerJoin(tournamentTeams, eq(tournamentTeams.id, captaincies.tournamentTeamId))
+    .leftJoin(
+      tournamentPlayers,
+      and(
+        eq(tournamentPlayers.personId, people.id),
+        eq(tournamentPlayers.tournamentId, tournament.id),
+      ),
+    )
     .where(and(eq(tournamentTeams.tournamentId, tournament.id), isNull(captaincies.endedAt)));
 
   const squad = await db
@@ -351,6 +436,7 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
       teamId: squadMembers.tournamentTeamId,
       tournamentPlayerId: squadMembers.tournamentPlayerId,
       name: people.name,
+      formAnswers: tournamentPlayers.formAnswers,
     })
     .from(squadMembers)
     .innerJoin(tournamentPlayers, eq(tournamentPlayers.id, squadMembers.tournamentPlayerId))
@@ -411,26 +497,34 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
       teams: teams.map((team) => {
         const captain = captains.find((item) => item.teamId === team.id);
         const spent = spentByTeam.get(team.id) ?? 0;
+        const roster = squad.filter((member) => member.teamId === team.id);
         return {
           id: team.id,
           name: team.name,
           logoUrl: mediaUrl(team.logoPath),
-          openingBalance: team.openingBalance,
-          balance: team.openingBalance == null ? null : team.openingBalance - spent,
+          openingBalance: openingPurse(team.openingBalance),
+          balance: openingPurse(team.openingBalance) - spent,
           penalty: team.penalty,
           captainPersonId: captain?.personId ?? null,
           captainName: captain?.name ?? null,
-          squad: squad
-            .filter((member) => member.teamId === team.id)
-            .map((member) => ({
-              tournamentPlayerId: member.tournamentPlayerId,
-              name: member.name,
-              refundAmount:
-                wonBids.find(
-                  (bid) =>
-                    bid.tournamentPlayerId === member.tournamentPlayerId && bid.teamId === team.id,
-                )?.amount ?? 0,
-            })),
+          squadGap: squadGap({
+            spent,
+            squadCount: roster.length,
+            openingBalance: team.openingBalance,
+          }),
+          checks: squadChecks([
+            ...(captain ? [memberFact(captain.formAnswers)] : []),
+            ...roster.map((member) => memberFact(member.formAnswers)),
+          ]),
+          squad: roster.map((member) => ({
+            tournamentPlayerId: member.tournamentPlayerId,
+            name: member.name,
+            refundAmount:
+              wonBids.find(
+                (bid) =>
+                  bid.tournamentPlayerId === member.tournamentPlayerId && bid.teamId === team.id,
+              )?.amount ?? 0,
+          })),
         };
       }),
       players: playerRows.map((player) => ({

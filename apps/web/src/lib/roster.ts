@@ -12,6 +12,7 @@ import {
 } from "@playverse/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { openNextLot } from "./auction";
+import { CRORE } from "./rules";
 import { column, hasColumn, parseCsv } from "./csv";
 import { safeName, saveUpload } from "./uploads";
 
@@ -176,7 +177,7 @@ export async function importSettledCsv(input: {
           tournamentId: input.tournamentId,
           name: row.teamName,
           logoPath,
-          openingBalance: row.openingBalance,
+          openingBalance: row.openingBalance ?? CRORE,
           sortOrder,
         })
         .returning();

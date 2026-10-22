@@ -83,9 +83,14 @@ export function TournamentManager({
           void run(() => savePlaceholdersAction(new FormData(event.currentTarget)));
         }}
       >
-        <h2 className="pixel-label text-bid">Placeholders</h2>
+        <h2 className="pixel-label text-bid">Notes</h2>
         <p className="mt-2 max-w-2xl text-sm text-mist/70">
-          Minimum bid, maximum bid, bid jump, and penalty are stored here and are not applied yet.
+          Each team starts with ₹1,00,00,000. The first bid is at least ₹3,00,000, in steps of ₹50,000.
+          From ₹10,00,000 the step is ₹1,00,000, and above ₹25,00,000 it is ₹2,00,000. Only the team
+          leader confirms a bid. If the purse is gone before the squad is full, the leaderboard shows a
+          negative gap: each open seat counts as 10 lakh, plus any spend past the purse. That 10 lakh
+          is only for the gap. The player still sells at the winning bid. A full side is
+          20 people, counting the leader. The numbers below are notes. They do not change those rules.
         </p>
         <input type="hidden" name="tournamentId" value={desk.id} />
         <div className="mt-4 grid gap-4 md:grid-cols-4">
@@ -142,14 +147,22 @@ export function TournamentManager({
                 <p className="text-sm text-mist/70">
                   Captain {team.captainName ?? "not set"}
                   {" · "}
-                  {team.balance == null
-                    ? "balance not set"
-                    : `${formatMoney(team.balance)} left of ${formatMoney(team.openingBalance ?? 0)}`}
+                  {`${formatMoney(team.balance ?? 0)} left of ${formatMoney(team.openingBalance ?? 0)}`}
                   {" · "}
-                  {team.squad.length === 1 ? "1 player" : `${team.squad.length} players`}
+                  {team.squad.length} of 19 bought
+                  {team.squadGap < 0 ? ` · squad gap ${team.squadGap}` : ""}
                 </p>
               </div>
             </div>
+            <ul className="mt-4 grid gap-1 text-sm text-mist/80 sm:grid-cols-2">
+              {team.checks.map((check) => (
+                <li key={check.label}>
+                  {check.ok == null ? "—" : check.ok ? "Yes" : "Not yet"}
+                  {" · "}
+                  {check.label}
+                </li>
+              ))}
+            </ul>
             <form
               className="mt-4 flex flex-wrap items-end gap-3"
               onSubmit={(event) => {

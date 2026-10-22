@@ -1,4 +1,5 @@
 import { formatMoney, labelize, monogram } from "@/lib/format";
+import { bidStep, MIN_BID } from "@/lib/rules";
 import type { LivePayload } from "@/lib/types";
 
 export function PlayerStage({ live }: { live: LivePayload }) {
@@ -6,8 +7,8 @@ export function PlayerStage({ live }: { live: LivePayload }) {
   const captain = Boolean(live.player?.captainOf);
 
   return (
-    <section className="grid items-start gap-8 lg:grid-cols-[minmax(340px,480px)_280px] lg:gap-10">
-      <article className={`overflow-hidden ${captain ? "arcade-panel" : "arcade-panel arcade-panel-cyan"}`}>
+    <section className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] lg:gap-16 xl:gap-24">
+      <article className={`overflow-hidden lg:order-2 ${captain ? "arcade-panel" : "arcade-panel arcade-panel-cyan"}`}>
         {live.player ? (
           <div className="flex flex-col">
             <div className="flex aspect-[3/4] items-center justify-center bg-hall text-paper">
@@ -63,16 +64,18 @@ export function PlayerStage({ live }: { live: LivePayload }) {
         )}
       </article>
 
-      <aside className="arcade-panel p-6">
+      <aside className="bid-stage arcade-panel flex flex-col p-8 lg:order-1 lg:p-12">
         <p className="pixel-label text-gold">Current bid</p>
-        <p className="bid-figure mt-4">
+        <p className="bid-stage-figure mt-6 whitespace-nowrap">
           {live.state.currentAmount == null ? "—" : formatMoney(live.state.currentAmount)}
         </p>
-        <p className="mt-4 text-xl text-paper">{live.state.currentTeamName ?? "No team has bid"}</p>
-        {live.tournament?.minBid != null ? (
-          <p className="mt-4 text-sm text-mist/70">Minimum bid {formatMoney(live.tournament.minBid)}</p>
-        ) : null}
-        <h2 className="pixel-label mt-8 text-bid">Bids for this player</h2>
+        <p className="mt-8 text-3xl text-paper">{live.state.currentTeamName ?? "No team has bid"}</p>
+        <p className="mt-5 max-w-xl text-lg leading-7 text-mist/70">
+          {live.state.currentAmount == null || live.state.currentAmount <= 0
+            ? `Opens at ${formatMoney(MIN_BID)}, then steps of ${formatMoney(50_000)}`
+            : `Next bid ${formatMoney(live.state.currentAmount + bidStep(live.state.currentAmount))} · steps of ${formatMoney(bidStep(live.state.currentAmount))}`}
+        </p>
+        <h2 className="pixel-label mt-12 text-bid">Bids for this player</h2>
         {live.tape.length === 0 ? (
           <p className="mt-3 text-mist/70">No bids yet.</p>
         ) : (

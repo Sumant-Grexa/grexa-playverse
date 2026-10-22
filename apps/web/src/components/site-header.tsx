@@ -42,11 +42,7 @@ export function SiteHeader({
               <Link
                 key={href}
                 href={href}
-                className={`rounded-full border px-4 py-2 text-sm ${
-                  current
-                    ? "border-bid bg-bid text-ink"
-                    : "border-sage/70 text-mist hover:border-bid"
-                }`}
+                className={current ? "nav-link nav-link-current" : "nav-link"}
                 aria-current={current ? "page" : undefined}
               >
                 {label}
@@ -55,7 +51,7 @@ export function SiteHeader({
           })}
           {mode === "admin" ? (
             <form action={logout}>
-              <button type="submit" className="rounded-full border border-white/20 px-4 py-2 text-sm text-mist/80">
+              <button type="submit" className="nav-link">
                 Log out
               </button>
             </form>

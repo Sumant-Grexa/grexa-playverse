@@ -11,7 +11,7 @@ import {
   SESSION_COOKIE,
   verifySessionToken,
 } from "../auth";
-import { finalizeBid, markUnsold, placeBid } from "../auction";
+import { finalizeBid, markUnsold, placeBid, resetTestAuction } from "../auction";
 import { createGame, saveGame } from "../games";
 import {
   importSettledCsv,
@@ -189,7 +189,7 @@ export async function savePlaceholdersAction(formData: FormData): Promise<Action
       penalties,
     });
     refresh();
-    return { ok: true, message: "Placeholders saved. They are not applied to bids or the purse." };
+    return { ok: true, message: "Saved. Bids still follow the fixed purse and increment rules." };
   } catch (error) {
     return fail(error);
   }
@@ -212,6 +212,20 @@ export async function finalizeBidAction(): Promise<ActionResult> {
     await finalizeBid();
     refresh();
     return { ok: true };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function resetTestAuctionAction(): Promise<ActionResult> {
+  try {
+    await assertAdmin();
+    const playerName = await resetTestAuction();
+    refresh();
+    return {
+      ok: true,
+      message: playerName ? `${playerName} is up.` : "Reset. No player is waiting.",
+    };
   } catch (error) {
     return fail(error);
   }
