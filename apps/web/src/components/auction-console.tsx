@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { ClosingShow } from "@/components/closing-show";
-import { PlayerStage } from "@/components/player-stage";
+import { SoldStamp } from "@/components/sold-stamp";
 import { finalizeBidAction, placeBidAction, resetTestAuctionAction, unsoldAction } from "@/lib/actions/admin";
-import { formatMoney } from "@/lib/format";
-import { AUCTION_SEATS, bidProblem, nextBidFloor, raiseStep } from "@/lib/rules";
+import { formatLakhs, formatMoney } from "@/lib/format";
+import { bidProblem, nextBidFloor, raiseStep } from "@/lib/rules";
+import { playBuzzSound, primeSoldSound } from "@/lib/sold-sound";
 import type { LivePayload } from "@/lib/types";
 
 export function AuctionConsole({ initial }: { initial: LivePayload }) {
@@ -15,6 +16,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
   const [note, setNote] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [pending, setPending] = useState(false);
+  const [stampPulse, setStampPulse] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +40,21 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
   const floor = nextBidFloor(live.state.currentAmount);
   const step = raiseStep(live.state.currentAmount);
   const lotOpen = live.state.status === "open" && live.player;
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (!/^[1-8]$/.test(event.key)) return;
+      const team = live.teams[Number(event.key) - 1];
+      if (!team || !lotOpen || pending) return;
+      if (amountFor(team.id) > team.runway || team.seatsLeft <= 0) return;
+      event.preventDefault();
+      place(team.id);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   useEffect(() => {
     setDrafts((prev) => {
@@ -99,13 +116,15 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
     });
   }
 
-  async function run(task: () => Promise<{ ok: boolean; error?: string; message?: string }>) {
+  async function run(task: () => Promise<{ ok: boolean; error?: string; message?: string; buzz?: boolean }>) {
     setPending(true);
     setError(null);
     const result = await task();
     setPending(false);
-    if (!result.ok) setError(result.error ?? "Could not update the auction");
-    else if (result.message) setError(null);
+    if (!result.ok) {
+      setError(result.error ?? "Could not update the auction");
+      if (result.buzz) playBuzzSound();
+    } else if (result.message) setError(null);
   }
 
   async function resetTest() {
@@ -139,17 +158,36 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
         )}
       </div>
       {note ? <p className="text-bid">{note}</p> : null}
-      {error ? <p className="text-gold">{error}</p> : null}
+      {error ? <p className={live.notice ? "text-danger" : "text-gold"}>{error}</p> : null}
+      {live.notice ? <p className="rule-notice">{live.notice.message}</p> : null}
+      <SoldStamp saleId={null} pulse={stampPulse} />
       {live.ceremony ? <ClosingShow teams={live.ceremony.teams} /> : null}
       {live.ceremony ? null : (
       <>
-      <PlayerStage live={live} />
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-center gap-3 border border-white/15 bg-hall-2 px-3 py-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-2xl font-bold text-paper">{live.player?.name ?? "No player"}</p>
+          <p className="text-sm text-mist/70">
+            {live.state.currentCaptainName ?? "No bid"}
+            {live.marks.lastBid ? ` · last ${formatMoney(live.marks.lastBid.amount)}` : ""}
+            {live.marks.topBid ? ` · top ${formatMoney(live.marks.topBid.amount)}` : ""}
+          </p>
+        </div>
+        <p className="font-sans text-4xl font-extrabold text-bid">
+          {live.state.currentAmount == null ? "—" : formatMoney(live.state.currentAmount)}
+        </p>
         <button
           type="button"
           disabled={pending || !lotOpen}
-          onClick={() => run(() => finalizeBidAction())}
-          className="btn btn-cyan"
+          onClick={() => {
+            primeSoldSound();
+            void run(async () => {
+              const result = await finalizeBidAction();
+              if (result.ok) setStampPulse((value) => value + 1);
+              return result;
+            });
+          }}
+          className="btn btn-cyan px-6 py-4 text-lg"
         >
           Final
         </button>
@@ -157,83 +195,76 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
           type="button"
           disabled={pending || !lotOpen}
           onClick={() => run(() => unsoldAction())}
-          className="btn btn-purple"
+          className="btn btn-purple px-6 py-4 text-lg"
         >
           Unsold
         </button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <p className="text-sm text-mist/60">Keys 1–8 bid that team. + raises the amount before you send it.</p>
+      <div className="grid gap-2 lg:grid-cols-2">
         {live.teams.map((team, index) => {
-          const current = live.state.currentTeamName === team.name && live.state.currentAmount != null;
+          const current = live.state.currentTeamId === team.id && live.state.currentAmount != null;
           const amount = amountFor(team.id);
           const typed = drafts[team.id] ?? "";
+          const blocked = amount > team.runway || team.seatsLeft <= 0;
+          const who = team.captainName ?? "No captain";
           return (
-            <article
+            <div
               key={team.id}
-              className={`arcade-panel px-4 py-4 text-left ${
-                current ? "border-gold text-paper" : "arcade-panel-cyan text-mist"
+              className={`flex items-center gap-2 border px-2 py-2 ${
+                current ? "border-bid bg-hall-2" : "border-white/15"
               }`}
             >
-              <span className="font-display text-sm text-bid">{index + 1}</span>
-              <span className="mt-3 flex items-center gap-3">
-                {team.logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={team.logoUrl} alt="" className="h-10 w-10 rounded-full bg-hall object-cover" />
-                ) : null}
-                <span>
-                  <span className="block text-xl text-paper">{team.name}</span>
-                  <span className="block text-sm opacity-70">
-                    {team.captainName ?? "No captain"}
-                    {" · "}
-                    {formatMoney(team.balance ?? 0)} left
-                    {" · "}
-                    {team.squadCount} of {AUCTION_SEATS} bought
-                  </span>
+              <span className="w-6 shrink-0 text-center text-lg font-bold text-bid">{index + 1}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-lg font-semibold leading-tight text-paper">{who}</span>
+                <span className="block truncate text-xs text-mist/70">
+                  {formatLakhs(team.balance ?? 0)} left · {team.seatsLeft} seats · W{team.women.state === "ok" ? "✓" : team.women.state === "warn" ? "!" : ""} T{team.cross.state === "ok" ? "✓" : team.cross.state === "warn" ? "!" : ""}
                 </span>
               </span>
-              <p className="mt-4 text-center font-sans text-2xl font-semibold text-bid">{formatMoney(amount)}</p>
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  className="btn btn-step btn-purple"
-                  aria-label={`Lower the bid for ${team.name}`}
-                  disabled={pending || !lotOpen || amount <= floor}
-                  onClick={() => bump(team.id, -1)}
-                >
-                  -
-                </button>
-                <input
-                  inputMode="numeric"
-                  aria-label={`Bid amount for ${team.name}`}
-                  value={typed}
-                  placeholder={String(floor)}
-                  disabled={pending || !lotOpen}
-                  onChange={(event) => {
-                    setError(null);
-                    setDrafts((prev) => ({ ...prev, [team.id]: event.target.value.replace(/[^\d]/g, "") }));
-                  }}
-                  className="field mt-0 min-w-0 text-center text-lg"
-                />
-                <button
-                  type="button"
-                  className="btn btn-step btn-cyan"
-                  aria-label={`Raise the bid for ${team.name}`}
-                  disabled={pending || !lotOpen}
-                  onClick={() => bump(team.id, 1)}
-                >
-                  +
-                </button>
-              </div>
-              <p className="mt-2 text-center text-xs text-mist/60">Steps of {formatMoney(step)}</p>
               <button
                 type="button"
-                className="btn btn-cyan mt-3 w-full"
-                disabled={pending || !lotOpen}
+                className="btn btn-step btn-purple"
+                aria-label={`Lower the bid for ${who}`}
+                disabled={pending || !lotOpen || amount <= floor}
+                onClick={() => bump(team.id, -1)}
+              >
+                -
+              </button>
+              <button
+                type="button"
+                className="btn btn-cyan min-w-32 px-3"
+                disabled={pending || !lotOpen || blocked}
                 onClick={() => place(team.id)}
               >
-                Place bid
+                {formatMoney(amount)}
               </button>
-            </article>
+              <button
+                type="button"
+                className="btn btn-step btn-cyan"
+                aria-label={`Raise the bid for ${who}`}
+                disabled={pending || !lotOpen}
+                onClick={() => bump(team.id, 1)}
+              >
+                +
+              </button>
+              <input
+                inputMode="numeric"
+                aria-label={`Custom bid for ${who}`}
+                value={typed}
+                placeholder={String(floor)}
+                disabled={pending || !lotOpen}
+                onChange={(event) => {
+                  setError(null);
+                  setDrafts((prev) => ({ ...prev, [team.id]: event.target.value.replace(/[^\d]/g, "") }));
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") place(team.id);
+                }}
+                className="field mt-0 shrink-0 text-center"
+                style={{ width: "7.5rem" }}
+              />
+            </div>
           );
         })}
       </div>

@@ -6,6 +6,25 @@ export function formatMoney(amount: number) {
   }).format(amount);
 }
 
+export function formatLakhs(amount: number) {
+  const value = amount / 100_000;
+  const shown = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+  return `${shown}L`;
+}
+
+export function formatCompactBid(amount: number) {
+  if (amount >= 10_000_000) {
+    return `${compactNumber(amount / 10_000_000)} Cr`;
+  }
+  const lacs = amount / 100_000;
+  return `${compactNumber(lacs)} ${lacs === 1 ? "Lac" : "Lacs"}`;
+}
+
+function compactNumber(value: number) {
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 export function formatWhen(iso: string) {
   return new Intl.DateTimeFormat("en-IN", {
     dateStyle: "medium",

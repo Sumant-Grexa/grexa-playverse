@@ -11,7 +11,7 @@ import {
   tournaments,
 } from "@playverse/db";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
-import { bidProblem, CRORE, memberFact, overDepartmentCap } from "./rules";
+import { bidGate, bidProblem, CRORE, memberFact, openingPurse, overDepartmentCap } from "./rules";
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
@@ -25,6 +25,44 @@ async function requireActive(tx: Tx) {
   if (!tournament) throw new Error("There is no live tournament");
   await tx.execute(sql`select id from tournaments where id = ${tournament.id} for update`);
   return tournament;
+}
+
+async function teamSnapshot(tx: Tx, tournamentId: string, teamId: string, incomingPlayerId: string) {
+  const [team] = await tx.select().from(tournamentTeams).where(eq(tournamentTeams.id, teamId)).limit(1);
+  const [spentRow] = await tx
+    .select({ spent: sql<number>`coalesce(sum(${bids.amount}), 0)::int` })
+    .from(bids)
+    .where(and(eq(bids.tournamentTeamId, teamId), eq(bids.status, "won")));
+  const squad = await tx
+    .select({ formAnswers: tournamentPlayers.formAnswers })
+    .from(squadMembers)
+    .innerJoin(tournamentPlayers, eq(tournamentPlayers.id, squadMembers.tournamentPlayerId))
+    .where(and(eq(squadMembers.tournamentTeamId, teamId), isNull(squadMembers.leftAt)));
+  const [captain] = await tx
+    .select({ name: people.name, formAnswers: tournamentPlayers.formAnswers })
+    .from(captaincies)
+    .innerJoin(people, eq(people.id, captaincies.personId))
+    .leftJoin(
+      tournamentPlayers,
+      and(eq(tournamentPlayers.personId, captaincies.personId), eq(tournamentPlayers.tournamentId, tournamentId)),
+    )
+    .where(and(eq(captaincies.tournamentTeamId, teamId), isNull(captaincies.endedAt)))
+    .limit(1);
+  const [incoming] = await tx
+    .select({ formAnswers: tournamentPlayers.formAnswers })
+    .from(tournamentPlayers)
+    .where(eq(tournamentPlayers.id, incomingPlayerId))
+    .limit(1);
+  return {
+    balance: openingPurse(team?.openingBalance) - Number(spentRow?.spent ?? 0),
+    squadCount: squad.length,
+    members: [
+      ...(captain ? [memberFact(captain.formAnswers)] : []),
+      ...squad.map((member) => memberFact(member.formAnswers)),
+    ],
+    incoming: memberFact(incoming?.formAnswers),
+    captainName: captain?.name ?? "No captain",
+  };
 }
 
 async function captainPersonIds(tx: Tx, tournamentId: string) {
@@ -98,6 +136,36 @@ export async function placeBid(teamId: string, amount: number) {
     if (!team) throw new Error("That team is not in this tournament");
     const problem = bidProblem(amount, state.currentAmount);
     if (problem) throw new Error(problem);
+
+    const snapshot = await teamSnapshot(tx, tournament.id, team.id, state.tournamentPlayerId);
+    const gate = bidGate({
+      amount,
+      balance: snapshot.balance,
+      squadCount: snapshot.squadCount,
+      members: snapshot.members,
+      incoming: snapshot.incoming,
+    });
+    if (gate.kind === "stop") throw new Error(gate.reason);
+    if (gate.kind === "buzz") {
+      await tx.insert(activityLog).values({
+        tournamentId: tournament.id,
+        actor: "admin",
+        action: "auction.blocked",
+        entityType: "team",
+        entityId: team.id,
+        payload: {
+          teamId: team.id,
+          captainName: snapshot.captainName,
+          amount,
+          message: gate.message,
+          womenFail: gate.womenFail,
+          crossFail: gate.crossFail,
+        },
+      });
+      const blocked = new Error(gate.message);
+      blocked.name = "AuctionBuzzError";
+      throw blocked;
+    }
 
     await tx.insert(bids).values({
       tournamentId: tournament.id,

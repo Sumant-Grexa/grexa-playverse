@@ -9,24 +9,47 @@ export type LivePayload = {
   state: {
     status: "idle" | "open" | "sold" | "unsold";
     currentAmount: number | null;
-    currentTeamName: string | null;
+    currentTeamId: string | null;
+    currentCaptainName: string | null;
   };
   waiting: number;
+  notice: {
+    id: string;
+    teamId: string;
+    captainName: string;
+    amount: number;
+    message: string;
+    womenFail: boolean;
+    crossFail: boolean;
+  } | null;
+  marks: {
+    lastBid: { teamName: string; playerName: string; amount: number } | null;
+    topBid: { teamName: string; playerName: string; amount: number } | null;
+    saleId: string | null;
+  };
   player: {
+    id: string;
     name: string;
     photoUrl: string | null;
     formAnswers: Record<string, string>;
+    skills: string[];
+    badge: string | null;
     captainOf: string | null;
     lastSeason: { teamName: string; amount: number; refunded: boolean } | null;
   } | null;
-  tape: { id: string; teamName: string; logoUrl: string | null; amount: number }[];
+  tape: { id: string; captainName: string; captainPhotoUrl: string | null; amount: number }[];
   teams: {
     id: string;
     name: string;
     logoUrl: string | null;
     balance: number | null;
     captainName: string | null;
+    captainPhotoUrl: string | null;
     squadCount: number;
+    seatsLeft: number;
+    runway: number;
+    women: { state: "idle" | "ok" | "warn"; label: string };
+    cross: { state: "idle" | "ok" | "warn"; label: string };
   }[];
   ceremony: null | {
     teams: {
@@ -115,4 +138,4 @@ export type TournamentDesk = {
   };
 };
 
-export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
+export type ActionResult = { ok: true; message?: string } | { ok: false; error: string; buzz?: boolean };

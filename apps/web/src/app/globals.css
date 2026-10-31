@@ -88,11 +88,20 @@ h2.pixel-label {
 .bid-stage-figure {
   font-family: var(--font-sora), sans-serif;
   font-weight: 800;
-  font-size: clamp(3rem, 14cqi, 8.5rem);
+  font-size: clamp(1.55rem, 9.5cqi, 2.85rem);
   line-height: 0.95;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.05em;
   color: #00d9e3;
   text-shadow: 0 0 32px rgba(0, 217, 227, 0.35);
+  overflow: hidden;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.bid-stage-figure.text-danger,
+.bid-card-figure.text-danger {
+  color: #ff3d8a;
+  text-shadow: 0 0 28px rgba(255, 61, 138, 0.4);
 }
 
 .arcade-panel {
@@ -373,6 +382,207 @@ h2.pixel-label {
   }
 }
 
+.card-arrive {
+  animation: card-arrive 1.45s cubic-bezier(0.16, 0.84, 0.32, 1) both;
+}
+
+.bid-arrive {
+  animation: bid-arrive 0.45s ease 1.15s both;
+}
+
+@keyframes card-arrive {
+  0% {
+    opacity: 0;
+    transform: translateX(28vw) scale(0.9);
+  }
+  42% {
+    opacity: 1;
+    transform: translateX(28vw) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.player-badge {
+  position: absolute;
+  right: -0.4rem;
+  bottom: 1.1rem;
+  display: grid;
+  min-height: 4.6rem;
+  min-width: 4.6rem;
+  place-items: center;
+  border-radius: 999px;
+  background: #4a4fee;
+  box-shadow: 0 0 0 4px #070318;
+  color: #f6f3ff;
+  font-family: var(--font-sora), sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 0.4rem;
+  text-align: center;
+  line-height: 1.05;
+}
+
+.skill-chip {
+  border: 2px solid rgba(0, 217, 227, 0.55);
+  border-radius: 8px;
+  padding: 0.28rem 0.7rem;
+  color: #f6f3ff;
+  font-size: 0.95rem;
+}
+
+.player-card {
+  container-type: inline-size;
+}
+
+.bid-card-figure {
+  font-family: var(--font-sora), sans-serif;
+  font-weight: 800;
+  font-size: clamp(1.7rem, 6.2cqi, 3.35rem);
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+  color: #00d9e3;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.max-bid-split {
+  height: 10px;
+  margin: 1.15rem 0 0.35rem;
+  background:
+    radial-gradient(circle at center, #00d9e3 0 3px, transparent 4px) center / 10px 10px no-repeat,
+    linear-gradient(90deg, transparent, rgba(0, 217, 227, 0.18) 8%, #7d2ae7 50%, rgba(0, 217, 227, 0.18) 92%, transparent);
+  background-size: 10px 10px, 100% 2px;
+  background-position: center, center;
+  background-repeat: no-repeat;
+}
+
+.rule-dot {
+  display: grid;
+  height: 1.7rem;
+  width: 1.7rem;
+  place-items: center;
+  border: 2px solid rgba(246, 243, 255, 0.45);
+  border-radius: 999px;
+  background: transparent;
+  color: #f6f3ff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.rule-dot-ok {
+  border-color: #00d9e3;
+  background: #00d9e3;
+  color: #070318;
+}
+
+.rule-dot-warn {
+  border-color: #ff3d8a;
+  background: #ff3d8a;
+  color: #fff;
+}
+
+.rule-tip {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 8;
+  width: 14rem;
+  border: 2px solid #ff3d8a;
+  background: #12082e;
+  color: #f6f3ff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 0.55rem 0.65rem;
+}
+
+.rule-notice {
+  position: fixed;
+  left: 50%;
+  top: 1.4rem;
+  z-index: 35;
+  width: min(720px, calc(100vw - 2rem));
+  transform: translateX(-50%);
+  border: 3px solid #ff3d8a;
+  background: rgba(18, 8, 46, 0.94);
+  color: #ff3d8a;
+  font-size: clamp(1.05rem, 2.4vw, 1.5rem);
+  font-weight: 800;
+  line-height: 1.25;
+  padding: 0.85rem 1.1rem;
+  text-align: center;
+  animation: stamp-fade 6s ease both;
+}
+
+@keyframes bid-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.sold-stamp {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: rgba(7, 3, 24, 0.28);
+  animation: stamp-fade 1.4s ease both;
+}
+
+.sold-stamp strong {
+  border: 8px solid #ff3d8a;
+  border-radius: 6px;
+  padding: 0.02em 0.18em 0.08em;
+  color: #ff3d8a;
+  font-family: var(--font-sora), sans-serif;
+  font-size: clamp(4.5rem, 16vw, 10rem);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 0.9;
+  text-shadow: 0 0 24px rgba(255, 61, 138, 0.45);
+  transform: rotate(-14deg);
+  animation: stamp-hit 0.38s cubic-bezier(0.2, 1.4, 0.3, 1) both;
+}
+
+@keyframes stamp-hit {
+  0% {
+    opacity: 0;
+    transform: rotate(-22deg) scale(1.45);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(-14deg) scale(1);
+  }
+}
+
+@keyframes stamp-fade {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes row-in {
   from {
     opacity: 0;
@@ -381,6 +591,13 @@ h2.pixel-label {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .card-arrive,
+  .bid-arrive {
+    animation: none;
   }
 }
 

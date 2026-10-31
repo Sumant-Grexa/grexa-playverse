@@ -6,6 +6,9 @@ export const TEAM_SIZE = 20;
 export const AUCTION_SEATS = TEAM_SIZE - 1;
 export const MIN_BID = 3 * LAKH;
 export const SLOT_VALUE = 10 * LAKH;
+export const MIN_WOMEN = 2;
+export const MIN_DEPARTMENTS = 6;
+export const MAX_PER_DEPARTMENT = 6;
 
 export function openingPurse(openingBalance: number | null | undefined) {
   return openingBalance == null ? CRORE : openingBalance;
@@ -63,9 +66,26 @@ export function memberFact(answers: unknown): MemberFact {
   };
 }
 
-export type SquadCheck = { label: string; ok: boolean | null };
+export function isWoman(gender: string) {
+  return /^(f|female|woman|w)$/i.test(gender.trim());
+}
 
-export function squadChecks(members: MemberFact[]): SquadCheck[] {
+export type CircleState = "idle" | "ok" | "warn";
+
+export type Composition = {
+  women: number;
+  departments: number;
+  largest: number;
+  genderKnown: boolean;
+  womenOk: boolean | null;
+  spreadOk: boolean;
+  capOk: boolean;
+  crossOk: boolean;
+  womenLabel: string;
+  crossLabel: string;
+};
+
+export function composition(members: MemberFact[]): Composition {
   const departments = members.map((member) => member.department.trim()).filter(Boolean);
   const unique = new Set(departments.map((department) => department.toLowerCase()));
   const counts = new Map<string, number>();
@@ -74,25 +94,39 @@ export function squadChecks(members: MemberFact[]): SquadCheck[] {
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   const largest = Math.max(0, ...counts.values());
-  const women = members.filter((member) => /^(f|female|woman|w)$/i.test(member.gender.trim())).length;
+  const women = members.filter((member) => isWoman(member.gender)).length;
   const genderKnown = members.some((member) => member.gender.trim() !== "");
-  return [
-    {
-      label: genderKnown ? `At least 4 women (${women} marked)` : "At least 4 women (add a gender column)",
-      ok: genderKnown ? women >= 4 : null,
-    },
-    { label: `At least 6 departments (${unique.size} so far)`, ok: unique.size >= MIN_DEPARTMENTS },
-    { label: `No more than 8 from one department (${largest} so far)`, ok: largest <= 8 },
-    { label: "At least one person from Client Support", ok: departments.some((department) => /client support/i.test(department)) },
-    {
-      label: "At least one person from Tech, Product, or Growth",
-      ok: departments.some((department) => /^(tech|product|growth)\b/i.test(department)),
-    },
-    { label: "A balanced mix of business, customer-facing, and operational roles", ok: null },
-  ];
+  const womenOk = genderKnown ? women >= MIN_WOMEN : null;
+  const spreadOk = unique.size >= MIN_DEPARTMENTS;
+  const capOk = largest <= MAX_PER_DEPARTMENT;
+  return {
+    women,
+    departments: unique.size,
+    largest,
+    genderKnown,
+    womenOk,
+    spreadOk,
+    capOk,
+    crossOk: spreadOk && capOk,
+    womenLabel: genderKnown
+      ? `At least ${MIN_WOMEN} women, including the captain (${women} marked)`
+      : `At least ${MIN_WOMEN} women, including the captain (add a gender column)`,
+    crossLabel: !capOk
+      ? `No more than ${MAX_PER_DEPARTMENT} people from one department (${largest} so far)`
+      : `People from at least ${MIN_DEPARTMENTS} departments (${unique.size} so far)`,
+  };
 }
 
-const MIN_DEPARTMENTS = 6;
+export type SquadCheck = { label: string; ok: boolean | null };
+
+export function squadChecks(members: MemberFact[]): SquadCheck[] {
+  const mix = composition(members);
+  return [
+    { label: mix.womenLabel, ok: mix.womenOk },
+    { label: `At least ${MIN_DEPARTMENTS} departments (${mix.departments} so far)`, ok: mix.spreadOk },
+    { label: `No more than ${MAX_PER_DEPARTMENT} from one department (${mix.largest} so far)`, ok: mix.capOk },
+  ];
+}
 
 export function overDepartmentCap(existingDepartments: string[], incoming: string) {
   const department = incoming.trim();
@@ -100,8 +134,70 @@ export function overDepartmentCap(existingDepartments: string[], incoming: strin
   const count = existingDepartments.filter(
     (item) => item.trim().toLowerCase() === department.toLowerCase(),
   ).length;
-  if (count >= 8) return `${department} already has 8 people on this team`;
+  if (count >= MAX_PER_DEPARTMENT) {
+    return `${department} already has ${MAX_PER_DEPARTMENT} people on this team`;
+  }
   return null;
+}
+
+export function runwayMax(balance: number, seatsLeft: number) {
+  if (seatsLeft <= 0) return 0;
+  if (seatsLeft === 1) return Math.max(0, balance);
+  return Math.max(0, balance - (seatsLeft - 1) * MIN_BID);
+}
+
+export type BidGate =
+  | { kind: "ok" }
+  | { kind: "stop"; reason: string }
+  | { kind: "buzz"; message: string; womenFail: boolean; crossFail: boolean };
+
+export function bidGate(input: {
+  amount: number;
+  balance: number;
+  squadCount: number;
+  members: MemberFact[];
+  incoming: MemberFact;
+}): BidGate {
+  const seatsLeft = AUCTION_SEATS - input.squadCount;
+  if (seatsLeft <= 0) return { kind: "stop", reason: "This squad is full" };
+  if (input.amount > input.balance) return { kind: "stop", reason: "Not enough purse left" };
+  const seatsAfter = seatsLeft - 1;
+  const purseAfter = input.balance - input.amount;
+  if (seatsAfter > 0 && purseAfter < seatsAfter * MIN_BID) {
+    return { kind: "stop", reason: "Keep runway for the remaining seats" };
+  }
+
+  const projected = composition([...input.members, input.incoming]);
+  const completing = seatsAfter === 0 || purseAfter === 0;
+  const womenFail = completing && projected.womenOk === false;
+  const crossFail = !projected.capOk || (completing && !projected.spreadOk);
+  if (!womenFail && !crossFail) return { kind: "ok" };
+
+  const parts: string[] = [];
+  if (womenFail) parts.push(projected.womenLabel);
+  if (crossFail) parts.push(projected.crossLabel);
+  return {
+    kind: "buzz",
+    message: parts.join(". "),
+    womenFail,
+    crossFail,
+  };
+}
+
+export function playerSkills(answers: Record<string, string> | null | undefined) {
+  if (!answers) return [];
+  const raw = pick(answers, /^(skills?|plays|expert)/i);
+  return raw
+    .split(/[,/;|]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+export function playerBadge(answers: Record<string, string> | null | undefined) {
+  if (!answers) return null;
+  const value = pick(answers, /^(badge|type|role)$/i);
+  return value || null;
 }
 
 function pick(answers: Record<string, unknown>, pattern: RegExp) {

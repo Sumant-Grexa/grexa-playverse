@@ -16,7 +16,17 @@ import {
   tournaments,
 } from "@playverse/db";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { memberFact, openingPurse, squadChecks, squadGap } from "./rules";
+import {
+  AUCTION_SEATS,
+  composition,
+  memberFact,
+  openingPurse,
+  playerBadge,
+  playerSkills,
+  runwayMax,
+  squadChecks,
+  squadGap,
+} from "./rules";
 import { mediaUrl } from "./uploads";
 import type { LeaderboardPayload, LivePayload, TournamentDesk, TournamentSummary } from "./types";
 
@@ -58,8 +68,10 @@ export async function getLive(): Promise<LivePayload> {
   if (!tournament) {
     return {
       tournament: null,
-      state: { status: "idle", currentAmount: null, currentTeamName: null },
+      state: { status: "idle", currentAmount: null, currentTeamId: null, currentCaptainName: null },
       waiting: 0,
+      notice: null,
+      marks: { lastBid: null, topBid: null, saleId: null },
       player: null,
       tape: [],
       teams: [],
@@ -112,14 +124,43 @@ async function buildLive(
   const spentByTeam = new Map(spentRows.map((row) => [row.teamId, Number(row.spent)]));
 
   const squadRows = await db
-    .select({ teamId: squadMembers.tournamentTeamId })
+    .select({
+      teamId: squadMembers.tournamentTeamId,
+      formAnswers: tournamentPlayers.formAnswers,
+    })
     .from(squadMembers)
+    .innerJoin(tournamentPlayers, eq(tournamentPlayers.id, squadMembers.tournamentPlayerId))
     .innerJoin(tournamentTeams, eq(tournamentTeams.id, squadMembers.tournamentTeamId))
     .where(and(eq(tournamentTeams.tournamentId, tournament.id), isNull(squadMembers.leftAt)));
   const squadCount = new Map<string, number>();
+  const squadFacts = new Map<string, ReturnType<typeof memberFact>[]>();
   for (const row of squadRows) {
     squadCount.set(row.teamId, (squadCount.get(row.teamId) ?? 0) + 1);
+    const list = squadFacts.get(row.teamId) ?? [];
+    list.push(memberFact(row.formAnswers));
+    squadFacts.set(row.teamId, list);
   }
+
+  const captainPlayerRows = await db
+    .select({
+      personId: tournamentPlayers.personId,
+      formAnswers: tournamentPlayers.formAnswers,
+    })
+    .from(tournamentPlayers)
+    .where(eq(tournamentPlayers.tournamentId, tournament.id));
+  const answersByPerson = new Map(captainPlayerRows.map((row) => [row.personId, row.formAnswers]));
+
+  const blockedRows = await db
+    .select({
+      id: activityLog.id,
+      entityId: activityLog.entityId,
+      payload: activityLog.payload,
+      createdAt: activityLog.createdAt,
+    })
+    .from(activityLog)
+    .where(and(eq(activityLog.tournamentId, tournament.id), eq(activityLog.action, "auction.blocked")))
+    .orderBy(desc(activityLog.createdAt))
+    .limit(80);
 
   const waitingRows = await db
     .select({ personId: tournamentPlayers.personId })
@@ -134,6 +175,7 @@ async function buildLive(
   if (state?.tournamentPlayerId) {
     const [lot] = await db
       .select({
+        id: tournamentPlayers.id,
         personId: people.id,
         name: people.name,
         photoPath: people.photoPath,
@@ -146,10 +188,14 @@ async function buildLive(
 
     if (lot) {
       const captainTeam = openCaptains.find((row) => row.personId === lot.personId);
+      const answers = lot.formAnswers ?? {};
       player = {
+        id: lot.id,
         name: lot.name,
         photoUrl: mediaUrl(lot.photoPath),
-        formAnswers: lot.formAnswers ?? {},
+        formAnswers: answers,
+        skills: playerSkills(answers),
+        badge: playerBadge(answers),
         captainOf: captainTeam
           ? (teams.find((team) => team.id === captainTeam.teamId)?.name ?? null)
           : null,
@@ -160,8 +206,7 @@ async function buildLive(
         .select({
           id: bids.id,
           amount: bids.amount,
-          teamName: tournamentTeams.name,
-          logoPath: tournamentTeams.logoPath,
+          teamId: tournamentTeams.id,
           createdAt: bids.createdAt,
         })
         .from(bids)
@@ -173,16 +218,41 @@ async function buildLive(
           ),
         )
         .orderBy(desc(bids.createdAt));
-      tape = bidRows.map((row) => ({
-        id: row.id,
-        teamName: row.teamName,
-        logoUrl: mediaUrl(row.logoPath),
-        amount: row.amount,
-      }));
+      tape = bidRows.map((row) => {
+        const captain = captainByTeam.get(row.teamId);
+        return {
+          id: row.id,
+          captainName: captain?.name ?? "No captain",
+          captainPhotoUrl: mediaUrl(captain?.photoPath),
+          amount: row.amount,
+        };
+      });
     }
   }
 
   const currentTeam = teams.find((team) => team.id === state?.currentTeamId);
+
+  const wonRows = await db
+    .select({
+      id: bids.id,
+      amount: bids.amount,
+      teamName: tournamentTeams.name,
+      playerName: people.name,
+      createdAt: bids.createdAt,
+    })
+    .from(bids)
+    .innerJoin(tournamentTeams, eq(tournamentTeams.id, bids.tournamentTeamId))
+    .innerJoin(tournamentPlayers, eq(tournamentPlayers.id, bids.tournamentPlayerId))
+    .innerJoin(people, eq(people.id, tournamentPlayers.personId))
+    .where(and(eq(bids.tournamentId, tournament.id), eq(bids.status, "won")))
+    .orderBy(desc(bids.createdAt));
+  const lastWon = wonRows[0] ?? null;
+  const topWon = wonRows.reduce<(typeof wonRows)[number] | null>((best, row) => {
+    if (!best || row.amount > best.amount) return row;
+    return best;
+  }, null);
+  const bidMark = (row: (typeof wonRows)[number] | null) =>
+    row ? { teamName: row.teamName, playerName: row.playerName, amount: row.amount } : null;
 
   const [settled] = await db
     .select({ id: tournamentPlayers.id })
@@ -241,23 +311,90 @@ async function buildLive(
     state: {
       status: state?.status ?? "idle",
       currentAmount: state?.currentAmount ?? null,
-      currentTeamName: currentTeam?.name ?? null,
+      currentTeamId: state?.currentTeamId ?? null,
+      currentCaptainName: currentTeam ? (captainByTeam.get(currentTeam.id)?.name ?? null) : null,
     },
     waiting,
+    notice: liveNotice(blockedRows),
+    marks: {
+      lastBid: bidMark(lastWon),
+      topBid: bidMark(topWon),
+      saleId: lastWon?.id ?? null,
+    },
     player,
     tape,
     teams: teams.map((team) => {
       const spent = spentByTeam.get(team.id) ?? 0;
+      const captain = captainByTeam.get(team.id);
+      const bought = squadCount.get(team.id) ?? 0;
+      const seatsLeft = Math.max(0, AUCTION_SEATS - bought);
+      const balance = openingPurse(team.openingBalance) - spent;
+      const members = [
+        ...(captain ? [memberFact(answersByPerson.get(captain.personId))] : []),
+        ...(squadFacts.get(team.id) ?? []),
+      ];
+      const mix = composition(members);
+      const flags = latestFlags(blockedRows, team.id);
       return {
         id: team.id,
         name: team.name,
         logoUrl: mediaUrl(team.logoPath),
-        balance: openingPurse(team.openingBalance) - spent,
-        captainName: captainByTeam.get(team.id)?.name ?? null,
-        squadCount: squadCount.get(team.id) ?? 0,
+        balance,
+        captainName: captain?.name ?? null,
+        captainPhotoUrl: mediaUrl(captain?.photoPath),
+        squadCount: bought,
+        seatsLeft,
+        runway: runwayMax(balance, seatsLeft),
+        women: {
+          state: mix.womenOk === true ? "ok" : flags.womenFail ? "warn" : "idle",
+          label: mix.womenLabel,
+        },
+        cross: {
+          state: mix.crossOk ? "ok" : flags.crossFail ? "warn" : "idle",
+          label: mix.crossLabel,
+        },
       };
     }),
     ceremony,
+  };
+}
+
+const NOTICE_MS = 6000;
+
+function asRecord(value: unknown) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  return {};
+}
+
+function liveNotice(
+  rows: { id: string; entityId: string | null; payload: Record<string, unknown>; createdAt: Date }[],
+): LivePayload["notice"] {
+  const row = rows[0];
+  if (!row) return null;
+  if (Date.now() - row.createdAt.getTime() > NOTICE_MS) return null;
+  const payload = asRecord(row.payload);
+  return {
+    id: row.id,
+    teamId: String(payload.teamId ?? row.entityId ?? ""),
+    captainName: String(payload.captainName ?? ""),
+    amount: Number(payload.amount ?? 0),
+    message: String(payload.message ?? ""),
+    womenFail: Boolean(payload.womenFail),
+    crossFail: Boolean(payload.crossFail),
+  };
+}
+
+function latestFlags(
+  rows: { entityId: string | null; payload: Record<string, unknown> }[],
+  teamId: string,
+) {
+  const row = rows.find(
+    (item) => item.entityId === teamId || String(asRecord(item.payload).teamId ?? "") === teamId,
+  );
+  const payload = asRecord(row?.payload);
+  return {
+    womenFail: Boolean(payload.womenFail),
+    crossFail: Boolean(payload.crossFail),
   };
 }
 

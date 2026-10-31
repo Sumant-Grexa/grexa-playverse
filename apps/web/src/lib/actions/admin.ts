@@ -202,6 +202,10 @@ export async function placeBidAction(teamId: string, amount: number): Promise<Ac
     refresh();
     return { ok: true };
   } catch (error) {
+    if (error instanceof Error && error.name === "AuctionBuzzError") {
+      refresh();
+      return { ok: false, error: error.message, buzz: true };
+    }
     return fail(error);
   }
 }
