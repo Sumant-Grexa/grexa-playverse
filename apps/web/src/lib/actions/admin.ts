@@ -145,16 +145,19 @@ export async function createTeamAction(formData: FormData) {
   await assertAdmin();
   const tournamentId = String(formData.get("tournamentId") ?? "");
   const captainName = String(formData.get("captainName") ?? "");
-  let teamId = "";
+  const file = formData.get("photo");
+  const photo =
+    file instanceof File && file.size > 0
+      ? { filename: file.name, bytes: Buffer.from(await file.arrayBuffer()) }
+      : undefined;
   try {
-    const team = await createTeam({ tournamentId, captainName });
-    teamId = team.teamId;
+    await createTeam({ tournamentId, captainName, photo });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create the team";
     redirect(`/admin/tournament?error=${encodeURIComponent(message)}`);
   }
   refresh();
-  redirect(`/admin/team/${teamId}`);
+  redirect(`/admin/tournament?tournament=${encodeURIComponent(tournamentId)}`);
 }
 
 export async function updateTeamAction(formData: FormData): Promise<ActionResult> {
@@ -165,11 +168,17 @@ export async function updateTeamAction(formData: FormData): Promise<ActionResult
       file instanceof File && file.size > 0
         ? { filename: file.name, bytes: Buffer.from(await file.arrayBuffer()) }
         : undefined;
+    const captainFile = formData.get("captainPhoto");
+    const captainPhoto =
+      captainFile instanceof File && captainFile.size > 0
+        ? { filename: captainFile.name, bytes: Buffer.from(await captainFile.arrayBuffer()) }
+        : undefined;
     await updateTeam({
       tournamentId: String(formData.get("tournamentId") ?? ""),
       teamId: String(formData.get("teamId") ?? ""),
       name: String(formData.get("name") ?? ""),
       logo,
+      captainPhoto,
     });
     refresh();
     return { ok: true, message: "Team saved." };

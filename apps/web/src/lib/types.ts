@@ -125,6 +125,7 @@ export type TournamentDesk = {
       penalty: number | null;
       captainPersonId: string | null;
       captainName: string | null;
+      captainPhotoUrl: string | null;
       squad: { tournamentPlayerId: string; name: string; refundAmount: number }[];
       checks: { label: string; ok: boolean | null }[];
       squadGap: number;

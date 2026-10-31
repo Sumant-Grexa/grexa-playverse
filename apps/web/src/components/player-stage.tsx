@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatLakhs, formatMoney, monogram } from "@/lib/format";
+import { badgeLook, formatLakhs, formatMoney, monogram } from "@/lib/format";
 import type { LivePayload } from "@/lib/types";
 
 export function PlayerStage({ live }: { live: LivePayload }) {
@@ -13,6 +13,8 @@ export function PlayerStage({ live }: { live: LivePayload }) {
   const tape = live.tape.slice(0, 2);
   const leadingTeam = live.teams.find((team) => team.id === live.state.currentTeamId);
   const teamLabel = leadingTeam?.name ?? (shownCaptain ? `${shownCaptain}'s team` : "Waiting for a bid");
+  const badge = badgeLook(live.player?.badge);
+  const hasBid = shownAmount != null || Boolean(shownCaptain);
 
   return (
     <section className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.9fr)] lg:gap-8 xl:gap-10">
@@ -22,21 +24,25 @@ export function PlayerStage({ live }: { live: LivePayload }) {
       >
         {live.player ? (
           <>
-            <div className="grid flex-1 gap-5 p-5 sm:grid-cols-[minmax(160px,240px)_minmax(0,1fr)] sm:p-6">
-              <div className="relative">
+            <div className="grid flex-1 items-start gap-5 p-5 sm:grid-cols-[minmax(220px,340px)_minmax(0,1fr)] sm:p-6">
+              <div className="player-photo">
                 <div className="flex aspect-square items-center justify-center overflow-hidden rounded-md bg-hall text-paper">
                   {live.player.photoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={live.player.photoUrl} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    <span className="font-display text-5xl text-bid">{monogram(live.player.name)}</span>
+                    <span className="font-display text-6xl text-bid">{monogram(live.player.name)}</span>
                   )}
                 </div>
-                {live.player.badge ? (
-                  <span className="player-badge">{live.player.badge}</span>
+                {badge ? (
+                  <span className={`player-stamp player-stamp-${badge.kind}`}>
+                    <span className="player-stamp-face">
+                      <span className="player-stamp-label">{badge.label}</span>
+                    </span>
+                  </span>
                 ) : null}
               </div>
-              <div className="flex min-w-0 flex-col justify-between gap-6">
+              <div className="player-copy">
                 <div>
                   <h1 className="font-sans text-4xl font-semibold leading-none tracking-tight text-paper sm:text-5xl">
                     {live.player.name}
@@ -54,12 +60,16 @@ export function PlayerStage({ live }: { live: LivePayload }) {
                     )}
                   </div>
                 </div>
-                <div>
-                  <p className="text-lg text-mist/80">{shownCaptain ?? "No bid yet"}</p>
-                  <p className={`bid-card-figure mt-1 ${notice ? "text-danger" : ""} ${overPurse ? "bid-slashed" : ""}`}>
-                    {shownAmount == null ? "—" : formatMoney(shownAmount)}
-                  </p>
-                </div>
+                {hasBid ? (
+                  <div>
+                    {shownCaptain ? <p className="text-lg text-mist/80">{shownCaptain}</p> : null}
+                    {shownAmount != null ? (
+                      <p className={`bid-card-figure mt-1 ${notice ? "text-danger" : ""} ${overPurse ? "bid-slashed" : ""}`}>
+                        {formatMoney(shownAmount)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
             <ul className="border-t border-white/10 px-5 py-4 sm:px-6">
@@ -101,9 +111,13 @@ export function PlayerStage({ live }: { live: LivePayload }) {
           <span className="text-mist/50"> | </span>
           {teamLabel}
         </p>
-        <p className={`bid-stage-figure mt-3 ${notice ? "text-danger" : ""} ${overPurse ? "bid-slashed" : ""}`}>
-          {shownAmount == null ? "—" : formatMoney(shownAmount)}
-        </p>
+        {shownAmount != null ? (
+          <p className={`bid-stage-figure mt-3 ${notice ? "text-danger" : ""} ${overPurse ? "bid-slashed" : ""}`}>
+            {formatMoney(shownAmount)}
+          </p>
+        ) : (
+          <p className="mt-3 text-lg text-mist/50">Waiting for a bid</p>
+        )}
         <div className="max-bid-split" aria-hidden="true" />
         <div className="flex flex-1 flex-col">
           {live.teams.map((team) => {

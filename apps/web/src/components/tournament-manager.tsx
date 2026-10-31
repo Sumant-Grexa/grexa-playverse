@@ -9,7 +9,7 @@ import {
   savePlaceholdersAction,
   uploadPhoto,
 } from "@/lib/actions/admin";
-import { formatMoney, formatWhen } from "@/lib/format";
+import { formatMoney, formatWhen, monogram } from "@/lib/format";
 import type { ActionResult, TournamentDesk, TournamentSummary } from "@/lib/types";
 
 export function TournamentManager({
@@ -75,13 +75,22 @@ export function TournamentManager({
       <section className="arcade-panel p-6">
         <h2 className="font-sans text-2xl font-semibold text-paper">Teams</h2>
         <p className="mt-2 max-w-2xl text-sm text-mist/70">
-          Enter a captain name. The team starts as that person&apos;s team, empty, with ₹1,00,00,000.
+          Add a captain by name and photo. The side starts as that person&apos;s team, empty, with
+          ₹1,00,00,000. You can rename it later.
         </p>
-        <form action={createTeamAction} className="mt-4 flex flex-wrap items-end gap-3">
+        <form
+          action={createTeamAction}
+          encType="multipart/form-data"
+          className="mt-4 flex flex-wrap items-end gap-3"
+        >
           <input type="hidden" name="tournamentId" value={desk.id} />
           <label>
             <span className="text-sm">Captain name</span>
             <input name="captainName" required placeholder="Asha Raman" className="field min-w-64" />
+          </label>
+          <label>
+            <span className="text-sm">Captain photo</span>
+            <input name="photo" type="file" accept="image/*" className="mt-1 block w-full max-w-56" />
           </label>
           <button type="submit" className="btn btn-cyan">
             Add team
@@ -90,14 +99,24 @@ export function TournamentManager({
         <div className="mt-6 grid gap-3">
           {desk.teams.map((team) => (
             <Link key={team.id} href={`/admin/team/${team.id}`} className="flex items-center justify-between gap-3 border-b border-white/10 py-3">
-              <span>
-                <span className="block text-lg font-semibold text-paper">{team.name}</span>
-                <span className="block text-sm text-mist/70">
-                  Captain {team.captainName ?? "not set"}
-                  {" · "}
-                  {formatMoney(team.balance ?? 0)} left
-                  {" · "}
-                  {team.squad.length} bought
+              <span className="flex min-w-0 items-center gap-3">
+                {team.captainPhotoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={team.captainPhotoUrl} alt="" className="h-12 w-12 rounded-full bg-hall object-cover" />
+                ) : (
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hall text-sm text-bid">
+                    {monogram(team.captainName ?? team.name)}
+                  </span>
+                )}
+                <span className="min-w-0">
+                  <span className="block truncate text-lg font-semibold text-paper">{team.name}</span>
+                  <span className="block truncate text-sm text-mist/70">
+                    Captain {team.captainName ?? "not set"}
+                    {" · "}
+                    {formatMoney(team.balance ?? 0)} left
+                    {" · "}
+                    {team.squad.length} bought
+                  </span>
                 </span>
               </span>
               <span className="text-sm text-bid">Edit</span>

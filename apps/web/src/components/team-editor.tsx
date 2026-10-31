@@ -42,12 +42,20 @@ export function TeamEditor({ team }: { team: TeamDetail }) {
           void run(() => updateTeamAction(new FormData(event.currentTarget)));
         }}
       >
-        <h1 className="font-sans text-4xl font-semibold text-paper">{team.name}</h1>
-        <p className="mt-2 text-mist/70">
-          Captain {team.captainName ?? "not set"}
-          {" · "}
-          {formatMoney(team.remaining)} left
-        </p>
+        <div className="flex flex-wrap items-center gap-4">
+          {team.captainPhotoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={team.captainPhotoUrl} alt="" className="h-16 w-16 rounded-full bg-hall object-cover" />
+          ) : null}
+          <div>
+            <h1 className="font-sans text-4xl font-semibold text-paper">{team.name}</h1>
+            <p className="mt-2 text-mist/70">
+              Captain {team.captainName ?? "not set"}
+              {" · "}
+              {formatMoney(team.remaining)} left
+            </p>
+          </div>
+        </div>
         <input type="hidden" name="tournamentId" value={team.tournamentId} />
         <input type="hidden" name="teamId" value={team.id} />
         <label className="mt-5 block">
@@ -55,7 +63,11 @@ export function TeamEditor({ team }: { team: TeamDetail }) {
           <input name="name" defaultValue={team.name} required className="field" />
         </label>
         <label className="mt-4 block">
-          <span className="text-sm">Logo</span>
+          <span className="text-sm">Captain photo</span>
+          <input name="captainPhoto" type="file" accept="image/*" className="mt-1 block w-full" />
+        </label>
+        <label className="mt-4 block">
+          <span className="text-sm">Team logo</span>
           <input name="logo" type="file" accept="image/*" className="mt-1 block w-full" />
         </label>
         <button type="submit" disabled={pending} className="btn btn-cyan mt-5">

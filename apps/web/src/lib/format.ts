@@ -3,6 +3,34 @@ export function defaultTeamName(captainName: string) {
   return name ? `${name}'s team` : "New team";
 }
 
+const BADGE_KINDS = [
+  ["collaborator", "Collaborator"],
+  ["entertainer", "Entertainer"],
+  ["executer", "Executer"],
+  ["risktaker", "Risk taker"],
+  ["strategist", "Strategist"],
+] as const;
+
+export function badgeLook(raw: string | null | undefined) {
+  if (!raw?.trim()) return null;
+  const compact = raw
+    .trim()
+    .replace(/^the\s+/i, "")
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+  const match = BADGE_KINDS.find(([kind, label]) => {
+    const fromLabel = label.toLowerCase().replace(/[^a-z]/g, "");
+    if (compact === kind || compact === fromLabel) return true;
+    if (kind === "executer" && (compact === "executor" || compact === "execute")) return true;
+    if (kind === "risktaker" && compact.includes("risk")) return true;
+    return compact.includes(fromLabel);
+  });
+  if (!match) {
+    return { kind: "other" as const, label: raw.trim().replace(/^the\s+/i, "") };
+  }
+  return { kind: match[0], label: match[1] };
+}
+
 export function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }

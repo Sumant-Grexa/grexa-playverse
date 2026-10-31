@@ -396,7 +396,11 @@ export async function savePlayerPhoto(input: {
   await db.update(people).set({ photoPath }).where(eq(people.id, input.personId));
 }
 
-export async function createTeam(input: { tournamentId: string; captainName: string }) {
+export async function createTeam(input: {
+  tournamentId: string;
+  captainName: string;
+  photo?: { filename: string; bytes: Buffer };
+}) {
   const db = getDb();
   const captainName = input.captainName.trim();
   if (!captainName) throw new Error("Enter the captain name");
@@ -409,6 +413,13 @@ export async function createTeam(input: { tournamentId: string; captainName: str
       .limit(1);
     if (!tournament) throw new Error("Tournament not found");
     const person = await ensureNamedPlayer(tx, input.tournamentId, captainName);
+    if (input.photo) {
+      const photoPath = await saveUpload(
+        `photos/${person.personId}/${safeName(input.photo.filename)}`,
+        input.photo.bytes,
+      );
+      await tx.update(people).set({ photoPath }).where(eq(people.id, person.personId));
+    }
     const [busy] = await tx
       .select({ id: captaincies.id })
       .from(captaincies)
@@ -461,6 +472,7 @@ export async function updateTeam(input: {
   teamId: string;
   name: string;
   logo?: { filename: string; bytes: Buffer };
+  captainPhoto?: { filename: string; bytes: Buffer };
 }) {
   const db = getDb();
   const name = input.name.trim();
@@ -487,6 +499,19 @@ export async function updateTeam(input: {
       .update(tournamentTeams)
       .set({ name: nextName, logoPath })
       .where(eq(tournamentTeams.id, input.teamId));
+    if (input.captainPhoto) {
+      const [captain] = await tx
+        .select({ personId: captaincies.personId })
+        .from(captaincies)
+        .where(and(eq(captaincies.tournamentTeamId, input.teamId), isNull(captaincies.endedAt)))
+        .limit(1);
+      if (!captain) throw new Error("Set a captain before saving their photo");
+      const photoPath = await saveUpload(
+        `photos/${captain.personId}/${safeName(input.captainPhoto.filename)}`,
+        input.captainPhoto.bytes,
+      );
+      await tx.update(people).set({ photoPath }).where(eq(people.id, captain.personId));
+    }
     await tx.insert(activityLog).values({
       tournamentId: input.tournamentId,
       actor: "admin",

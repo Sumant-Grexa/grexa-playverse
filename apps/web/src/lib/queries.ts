@@ -594,6 +594,7 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
       teamId: captaincies.tournamentTeamId,
       personId: people.id,
       name: people.name,
+      photoPath: people.photoPath,
       formAnswers: tournamentPlayers.formAnswers,
     })
     .from(captaincies)
@@ -684,6 +685,7 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
           penalty: team.penalty,
           captainPersonId: captain?.personId ?? null,
           captainName: captain?.name ?? null,
+          captainPhotoUrl: mediaUrl(captain?.photoPath),
           squadGap: squadGap({
             spent,
             squadCount: roster.length,
