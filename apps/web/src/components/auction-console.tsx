@@ -48,7 +48,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
       if (!/^[1-8]$/.test(event.key)) return;
       const team = live.teams[Number(event.key) - 1];
       if (!team || !lotOpen || pending) return;
-      if (amountFor(team.id) > team.runway || team.seatsLeft <= 0) return;
+      if (team.seatsLeft <= 0) return;
       event.preventDefault();
       place(team.id);
     }
@@ -159,7 +159,11 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
       </div>
       {note ? <p className="text-bid">{note}</p> : null}
       {error ? <p className={live.notice ? "text-danger" : "text-gold"}>{error}</p> : null}
-      {live.notice ? <p className="rule-notice">{live.notice.message}</p> : null}
+      {live.notice ? (
+        <p className={live.notice.overPurse ? "rule-notice rule-notice-hold" : "rule-notice"}>
+          {live.notice.message}
+        </p>
+      ) : null}
       <SoldStamp saleId={null} pulse={stampPulse} />
       {live.ceremony ? <ClosingShow teams={live.ceremony.teams} /> : null}
       {live.ceremony ? null : (
@@ -173,7 +177,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
             {live.marks.topBid ? ` · top ${formatMoney(live.marks.topBid.amount)}` : ""}
           </p>
         </div>
-        <p className="font-sans text-4xl font-extrabold text-bid">
+        <p className={`font-sans text-4xl font-extrabold ${live.state.overPurse ? "bid-slashed text-danger" : "text-bid"}`}>
           {live.state.currentAmount == null ? "—" : formatMoney(live.state.currentAmount)}
         </p>
         <button
@@ -206,7 +210,8 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
           const current = live.state.currentTeamId === team.id && live.state.currentAmount != null;
           const amount = amountFor(team.id);
           const typed = drafts[team.id] ?? "";
-          const blocked = amount > team.runway || team.seatsLeft <= 0;
+          const full = team.seatsLeft <= 0;
+          const overPurse = amount > (team.balance ?? 0);
           const who = team.captainName ?? "No captain";
           return (
             <div
@@ -218,8 +223,9 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
               <span className="w-6 shrink-0 text-center text-lg font-bold text-bid">{index + 1}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-lg font-semibold leading-tight text-paper">{who}</span>
-                <span className="block truncate text-xs text-mist/70">
+                <span className={`block truncate text-xs ${(team.balance ?? 0) < 0 ? "text-danger" : "text-mist/70"}`}>
                   {formatLakhs(team.balance ?? 0)} left · {team.seatsLeft} seats · W{team.women.state === "ok" ? "✓" : team.women.state === "warn" ? "!" : ""} T{team.cross.state === "ok" ? "✓" : team.cross.state === "warn" ? "!" : ""}
+                  {overPurse ? " · over purse" : ""}
                 </span>
               </span>
               <button
@@ -234,7 +240,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
               <button
                 type="button"
                 className="btn btn-cyan min-w-32 px-3"
-                disabled={pending || !lotOpen || blocked}
+                disabled={pending || !lotOpen || full}
                 onClick={() => place(team.id)}
               >
                 {formatMoney(amount)}

@@ -14,14 +14,16 @@ import {
 import { finalizeBid, markUnsold, placeBid, resetTestAuction } from "../auction";
 import { createGame, saveGame } from "../games";
 import {
+  addSquadMember,
+  createTeam,
   importSettledCsv,
   reassignCaptain,
   removeSquadMember,
   savePlaceholders,
   savePlayerPhoto,
+  updateTeam,
 } from "../roster";
 import type { ActionResult } from "../types";
-import { safeName } from "../uploads";
 
 async function assertAdmin() {
   const jar = await cookies();
@@ -39,6 +41,7 @@ function refresh() {
   revalidatePath("/admin");
   revalidatePath("/admin/tournament");
   revalidatePath("/admin/leaderboard");
+  revalidatePath("/teams");
 }
 
 export async function login(formData: FormData) {
@@ -94,22 +97,14 @@ export async function importRoster(_prev: ActionResult | null, formData: FormDat
     if (!(file instanceof File) || file.size === 0) {
       return { ok: false, error: "Choose the settled CSV" };
     }
-    const logos = new Map<string, Buffer>();
-    for (const entry of formData.getAll("logos")) {
-      if (!(entry instanceof File) || entry.size === 0) continue;
-      const bytes = Buffer.from(await entry.arrayBuffer());
-      logos.set(entry.name, bytes);
-      logos.set(safeName(entry.name), bytes);
-    }
     const result = await importSettledCsv({
       tournamentId,
       csvText: await file.text(),
-      logos,
     });
     refresh();
     return {
       ok: true,
-      message: `Imported ${result.people} people and ${result.teams} empty teams.`,
+      message: `Imported ${result.people} people. Teams stay as they are.`,
     };
   } catch (error) {
     return fail(error);
@@ -141,6 +136,58 @@ export async function reassignCaptainAction(formData: FormData): Promise<ActionR
     });
     refresh();
     return { ok: true, message: "Captain updated." };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function createTeamAction(formData: FormData) {
+  await assertAdmin();
+  const tournamentId = String(formData.get("tournamentId") ?? "");
+  const captainName = String(formData.get("captainName") ?? "");
+  let teamId = "";
+  try {
+    const team = await createTeam({ tournamentId, captainName });
+    teamId = team.teamId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not create the team";
+    redirect(`/admin/tournament?error=${encodeURIComponent(message)}`);
+  }
+  refresh();
+  redirect(`/admin/team/${teamId}`);
+}
+
+export async function updateTeamAction(formData: FormData): Promise<ActionResult> {
+  try {
+    await assertAdmin();
+    const file = formData.get("logo");
+    const logo =
+      file instanceof File && file.size > 0
+        ? { filename: file.name, bytes: Buffer.from(await file.arrayBuffer()) }
+        : undefined;
+    await updateTeam({
+      tournamentId: String(formData.get("tournamentId") ?? ""),
+      teamId: String(formData.get("teamId") ?? ""),
+      name: String(formData.get("name") ?? ""),
+      logo,
+    });
+    refresh();
+    return { ok: true, message: "Team saved." };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function addPlayerAction(formData: FormData): Promise<ActionResult> {
+  try {
+    await assertAdmin();
+    await addSquadMember({
+      tournamentId: String(formData.get("tournamentId") ?? ""),
+      teamId: String(formData.get("teamId") ?? ""),
+      tournamentPlayerId: String(formData.get("tournamentPlayerId") ?? ""),
+    });
+    refresh();
+    return { ok: true, message: "Player added to the squad." };
   } catch (error) {
     return fail(error);
   }

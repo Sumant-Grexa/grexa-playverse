@@ -1,3 +1,12 @@
+export function defaultTeamName(captainName: string) {
+  const name = captainName.trim();
+  return name ? `${name}'s team` : "New team";
+}
+
+export function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 export function formatMoney(amount: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",

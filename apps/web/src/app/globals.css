@@ -520,6 +520,16 @@ h2.pixel-label {
   animation: stamp-fade 6s ease both;
 }
 
+.rule-notice-hold {
+  animation: none;
+}
+
+.bid-slashed {
+  text-decoration: line-through;
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.12em;
+}
+
 @keyframes bid-arrive {
   from {
     opacity: 0;

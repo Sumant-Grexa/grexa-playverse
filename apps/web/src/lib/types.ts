@@ -11,6 +11,7 @@ export type LivePayload = {
     currentAmount: number | null;
     currentTeamId: string | null;
     currentCaptainName: string | null;
+    overPurse: boolean;
   };
   waiting: number;
   notice: {
@@ -21,6 +22,7 @@ export type LivePayload = {
     message: string;
     womenFail: boolean;
     crossFail: boolean;
+    overPurse: boolean;
   } | null;
   marks: {
     lastBid: { teamName: string; playerName: string; amount: number } | null;
@@ -37,7 +39,14 @@ export type LivePayload = {
     captainOf: string | null;
     lastSeason: { teamName: string; amount: number; refunded: boolean } | null;
   } | null;
-  tape: { id: string; captainName: string; captainPhotoUrl: string | null; amount: number }[];
+  tape: {
+    id: string;
+    teamId: string;
+    captainName: string;
+    captainPhotoUrl: string | null;
+    amount: number;
+    overPurse: boolean;
+  }[];
   teams: {
     id: string;
     name: string;
@@ -139,3 +148,39 @@ export type TournamentDesk = {
 };
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string; buzz?: boolean };
+
+export type PublicTeamList = {
+  tournamentName: string | null;
+  teams: {
+    id: string;
+    name: string;
+    logoUrl: string | null;
+    captainName: string | null;
+    captainPhotoUrl: string | null;
+    squadCount: number;
+    remaining: number;
+  }[];
+};
+
+export type TeamDetail = {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  tournamentId: string;
+  tournamentName: string;
+  captainName: string | null;
+  captainPhotoUrl: string | null;
+  captainPersonId: string | null;
+  remaining: number;
+  openingBalance: number;
+  squadCount: number;
+  checks: { label: string; ok: boolean | null }[];
+  members: {
+    tournamentPlayerId: string;
+    name: string;
+    photoUrl: string | null;
+    amount: number;
+  }[];
+  available: { tournamentPlayerId: string; name: string }[];
+  people: { personId: string; name: string }[];
+};

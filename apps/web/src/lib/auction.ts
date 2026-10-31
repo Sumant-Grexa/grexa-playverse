@@ -146,6 +146,7 @@ export async function placeBid(teamId: string, amount: number) {
       incoming: snapshot.incoming,
     });
     if (gate.kind === "stop") throw new Error(gate.reason);
+    const overPurse = amount > snapshot.balance;
     if (gate.kind === "buzz") {
       await tx.insert(activityLog).values({
         tournamentId: tournament.id,
@@ -185,10 +186,15 @@ export async function placeBid(teamId: string, amount: number) {
     await tx.insert(activityLog).values({
       tournamentId: tournament.id,
       actor: "admin",
-      action: "auction.bid",
+      action: overPurse ? "auction.overpurse" : "auction.bid",
       entityType: "team",
       entityId: team.id,
-      payload: { teamName: team.name, amount },
+      payload: {
+        teamName: team.name,
+        captainName: snapshot.captainName,
+        amount,
+        remaining: snapshot.balance,
+      },
     });
   });
 }

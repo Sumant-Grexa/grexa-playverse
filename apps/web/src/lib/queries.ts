@@ -27,8 +27,16 @@ import {
   squadChecks,
   squadGap,
 } from "./rules";
+import { isUuid } from "./format";
 import { mediaUrl } from "./uploads";
-import type { LeaderboardPayload, LivePayload, TournamentDesk, TournamentSummary } from "./types";
+import type {
+  LeaderboardPayload,
+  LivePayload,
+  PublicTeamList,
+  TeamDetail,
+  TournamentDesk,
+  TournamentSummary,
+} from "./types";
 
 type Database = ReturnType<typeof getDb>;
 
@@ -68,7 +76,13 @@ export async function getLive(): Promise<LivePayload> {
   if (!tournament) {
     return {
       tournament: null,
-      state: { status: "idle", currentAmount: null, currentTeamId: null, currentCaptainName: null },
+      state: {
+        status: "idle",
+        currentAmount: null,
+        currentTeamId: null,
+        currentCaptainName: null,
+        overPurse: false,
+      },
       waiting: 0,
       notice: null,
       marks: { lastBid: null, topBid: null, saleId: null },
@@ -220,11 +234,15 @@ async function buildLive(
         .orderBy(desc(bids.createdAt));
       tape = bidRows.map((row) => {
         const captain = captainByTeam.get(row.teamId);
+        const team = teams.find((item) => item.id === row.teamId);
+        const remaining = openingPurse(team?.openingBalance) - (spentByTeam.get(row.teamId) ?? 0);
         return {
           id: row.id,
+          teamId: row.teamId,
           captainName: captain?.name ?? "No captain",
           captainPhotoUrl: mediaUrl(captain?.photoPath),
           amount: row.amount,
+          overPurse: row.amount > remaining,
         };
       });
     }
@@ -300,6 +318,46 @@ async function buildLive(
     };
   }
 
+  const liveTeams: LivePayload["teams"] = teams.map((team) => {
+    const spent = spentByTeam.get(team.id) ?? 0;
+    const captain = captainByTeam.get(team.id);
+    const bought = squadCount.get(team.id) ?? 0;
+    const seatsLeft = Math.max(0, AUCTION_SEATS - bought);
+    const balance = openingPurse(team.openingBalance) - spent;
+    const members = [
+      ...(captain ? [memberFact(answersByPerson.get(captain.personId))] : []),
+      ...(squadFacts.get(team.id) ?? []),
+    ];
+    const mix = composition(members);
+    const flags = latestFlags(blockedRows, team.id);
+    return {
+      id: team.id,
+      name: team.name,
+      logoUrl: mediaUrl(team.logoPath),
+      balance,
+      captainName: captain?.name ?? null,
+      captainPhotoUrl: mediaUrl(captain?.photoPath),
+      squadCount: bought,
+      seatsLeft,
+      runway: runwayMax(balance, seatsLeft),
+      women: {
+        state: mix.womenOk === true ? "ok" : flags.womenFail ? "warn" : "idle",
+        label: mix.womenLabel,
+      },
+      cross: {
+        state: mix.crossOk ? "ok" : flags.crossFail ? "warn" : "idle",
+        label: mix.crossLabel,
+      },
+    };
+  });
+  const leading = liveTeams.find((team) => team.id === state?.currentTeamId) ?? null;
+  const overPurse =
+    state?.status === "open" &&
+    state.currentAmount != null &&
+    leading != null &&
+    state.currentAmount > (leading.balance ?? 0);
+  const captainName = leading?.captainName ?? (currentTeam ? (captainByTeam.get(currentTeam.id)?.name ?? null) : null);
+
   return {
     tournament: {
       id: tournament.id,
@@ -312,10 +370,22 @@ async function buildLive(
       status: state?.status ?? "idle",
       currentAmount: state?.currentAmount ?? null,
       currentTeamId: state?.currentTeamId ?? null,
-      currentCaptainName: currentTeam ? (captainByTeam.get(currentTeam.id)?.name ?? null) : null,
+      currentCaptainName: captainName,
+      overPurse,
     },
     waiting,
-    notice: liveNotice(blockedRows),
+    notice: overPurse
+      ? {
+          id: `overpurse-${leading.id}-${state?.currentAmount}`,
+          teamId: leading.id,
+          captainName: captainName ?? "No captain",
+          amount: state?.currentAmount ?? 0,
+          message: `${captainName ?? "This team"} is over purse`,
+          womenFail: false,
+          crossFail: false,
+          overPurse: true,
+        }
+      : liveNotice(blockedRows),
     marks: {
       lastBid: bidMark(lastWon),
       topBid: bidMark(topWon),
@@ -323,38 +393,7 @@ async function buildLive(
     },
     player,
     tape,
-    teams: teams.map((team) => {
-      const spent = spentByTeam.get(team.id) ?? 0;
-      const captain = captainByTeam.get(team.id);
-      const bought = squadCount.get(team.id) ?? 0;
-      const seatsLeft = Math.max(0, AUCTION_SEATS - bought);
-      const balance = openingPurse(team.openingBalance) - spent;
-      const members = [
-        ...(captain ? [memberFact(answersByPerson.get(captain.personId))] : []),
-        ...(squadFacts.get(team.id) ?? []),
-      ];
-      const mix = composition(members);
-      const flags = latestFlags(blockedRows, team.id);
-      return {
-        id: team.id,
-        name: team.name,
-        logoUrl: mediaUrl(team.logoPath),
-        balance,
-        captainName: captain?.name ?? null,
-        captainPhotoUrl: mediaUrl(captain?.photoPath),
-        squadCount: bought,
-        seatsLeft,
-        runway: runwayMax(balance, seatsLeft),
-        women: {
-          state: mix.womenOk === true ? "ok" : flags.womenFail ? "warn" : "idle",
-          label: mix.womenLabel,
-        },
-        cross: {
-          state: mix.crossOk ? "ok" : flags.crossFail ? "warn" : "idle",
-          label: mix.crossLabel,
-        },
-      };
-    }),
+    teams: liveTeams,
     ceremony,
   };
 }
@@ -381,6 +420,7 @@ function liveNotice(
     message: String(payload.message ?? ""),
     womenFail: Boolean(payload.womenFail),
     crossFail: Boolean(payload.crossFail),
+    overPurse: false,
   };
 }
 
@@ -681,4 +721,112 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
       })),
     },
   };
+}
+
+export async function getPublicTeams(): Promise<PublicTeamList> {
+  const tournament = await getActiveTournament();
+  if (!tournament) return { tournamentName: null, teams: [] };
+  const details = await listTeamCards(tournament.id);
+  return { tournamentName: tournament.name, teams: details };
+}
+
+export async function getTeamDetail(teamId: string): Promise<TeamDetail | null> {
+  if (!isUuid(teamId)) return null;
+  const db = getDb();
+  const [team] = await db
+    .select({
+      id: tournamentTeams.id,
+      name: tournamentTeams.name,
+      logoPath: tournamentTeams.logoPath,
+      openingBalance: tournamentTeams.openingBalance,
+      tournamentId: tournamentTeams.tournamentId,
+      tournamentName: tournaments.name,
+    })
+    .from(tournamentTeams)
+    .innerJoin(tournaments, eq(tournaments.id, tournamentTeams.tournamentId))
+    .where(eq(tournamentTeams.id, teamId))
+    .limit(1);
+  if (!team) return null;
+
+  const cards = await listTeamCards(team.tournamentId);
+  const card = cards.find((item) => item.id === team.id);
+  const desk = await getTournamentDesk(team.tournamentId);
+  const selected = desk.selected;
+  const deskTeam = selected?.teams.find((item) => item.id === team.id);
+  const captainIds = new Set(
+    (selected?.teams ?? []).map((item) => item.captainPersonId).filter((id): id is string => Boolean(id)),
+  );
+  return {
+    id: team.id,
+    name: team.name,
+    logoUrl: mediaUrl(team.logoPath),
+    tournamentId: team.tournamentId,
+    tournamentName: team.tournamentName,
+    captainName: card?.captainName ?? null,
+    captainPhotoUrl: card?.captainPhotoUrl ?? null,
+    captainPersonId: deskTeam?.captainPersonId ?? null,
+    remaining: card?.remaining ?? openingPurse(team.openingBalance),
+    openingBalance: openingPurse(team.openingBalance),
+    squadCount: card?.squadCount ?? 0,
+    checks: deskTeam?.checks ?? [],
+    members: (deskTeam?.squad ?? []).map((member) => ({
+      tournamentPlayerId: member.tournamentPlayerId,
+      name: member.name,
+      photoUrl: selected?.players.find((player) => player.tournamentPlayerId === member.tournamentPlayerId)?.photoUrl ?? null,
+      amount: member.refundAmount,
+    })),
+    available: (selected?.players ?? [])
+      .filter((player) => player.status === "available" && !player.isCaptain && !captainIds.has(player.personId))
+      .map((player) => ({ tournamentPlayerId: player.tournamentPlayerId, name: player.name })),
+    people: (selected?.players ?? []).map((player) => ({ personId: player.personId, name: player.name })),
+  };
+}
+
+async function listTeamCards(tournamentId: string) {
+  const db = getDb();
+  const teams = await db
+    .select()
+    .from(tournamentTeams)
+    .where(eq(tournamentTeams.tournamentId, tournamentId))
+    .orderBy(asc(tournamentTeams.sortOrder), asc(tournamentTeams.name));
+  const captains = await db
+    .select({
+      teamId: captaincies.tournamentTeamId,
+      name: people.name,
+      photoPath: people.photoPath,
+    })
+    .from(captaincies)
+    .innerJoin(tournamentTeams, eq(tournamentTeams.id, captaincies.tournamentTeamId))
+    .innerJoin(people, eq(people.id, captaincies.personId))
+    .where(and(eq(tournamentTeams.tournamentId, tournamentId), isNull(captaincies.endedAt)));
+  const captainByTeam = new Map(captains.map((row) => [row.teamId, row]));
+  const spentRows = await db
+    .select({
+      teamId: bids.tournamentTeamId,
+      spent: sql<number>`coalesce(sum(${bids.amount}), 0)::int`,
+    })
+    .from(bids)
+    .where(and(eq(bids.tournamentId, tournamentId), eq(bids.status, "won")))
+    .groupBy(bids.tournamentTeamId);
+  const spentByTeam = new Map(spentRows.map((row) => [row.teamId, Number(row.spent)]));
+  const squadRows = await db
+    .select({ teamId: squadMembers.tournamentTeamId })
+    .from(squadMembers)
+    .innerJoin(tournamentTeams, eq(tournamentTeams.id, squadMembers.tournamentTeamId))
+    .where(and(eq(tournamentTeams.tournamentId, tournamentId), isNull(squadMembers.leftAt)));
+  const squadCount = new Map<string, number>();
+  for (const row of squadRows) squadCount.set(row.teamId, (squadCount.get(row.teamId) ?? 0) + 1);
+  return teams.map((team) => {
+    const captain = captainByTeam.get(team.id);
+    const spent = spentByTeam.get(team.id) ?? 0;
+    return {
+      id: team.id,
+      name: team.name,
+      logoUrl: mediaUrl(team.logoPath),
+      captainName: captain?.name ?? null,
+      captainPhotoUrl: mediaUrl(captain?.photoPath),
+      squadCount: squadCount.get(team.id) ?? 0,
+      remaining: openingPurse(team.openingBalance) - spent,
+    };
+  });
 }

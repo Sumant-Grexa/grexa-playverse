@@ -1,10 +1,10 @@
-name,wantsToBeCaptain,isCaptain,teamName,teamLogo,openingBalance,department,gender,skills,badge
-Asha Raman,true,true,Paper Boats,paper-boats.svg,10000000,Design,woman,"quiz, cricket",All-rounder
-Neel Kapoor,true,true,Night Shift,night-shift.svg,10000000,Operations,man,"football, chess",Striker
-Meher Qureshi,true,true,Slow Jam,slow-jam.svg,10000000,People,woman,"badminton, quiz",Anchor
-Rohan Iyer,false,false,,,,Engineering,man,"cricket, football",Batter
-Kabir Anand,true,false,,,,Finance,man,chess,Finisher
-Sana Sheikh,false,false,,,,Support,woman,"table tennis, quiz",Keeper
-Dev Menon,false,false,,,,Engineering,man,football,Pace
-Farah Joseph,true,false,,,,Design,woman,quiz,All-rounder
-Imran Bedi,false,false,,,,Sales,man,cricket,Opener
+name,photo,gender,player category,department,skills
+Asha Raman,,woman,All-rounder,Design,"quiz, cricket"
+Neel Kapoor,,man,Striker,Operations,"football, chess"
+Meher Qureshi,,woman,Anchor,People,"badminton, quiz"
+Rohan Iyer,,man,Batter,Engineering,"cricket, football"
+Kabir Anand,,man,Finisher,Finance,chess
+Sana Sheikh,,woman,Keeper,Support,"table tennis, quiz"
+Dev Menon,,man,Pace,Engineering,football
+Farah Joseph,,woman,All-rounder,Design,quiz
+Imran Bedi,,man,Opener,Sales,cricket

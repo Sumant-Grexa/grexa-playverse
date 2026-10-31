@@ -26,17 +26,11 @@ async function main() {
   }
 
   const csvText = readFileSync(resolve(sampleDir, "settled.csv"), "utf8");
-  const logos = new Map<string, Buffer>();
-  for (const name of ["paper-boats.svg", "night-shift.svg", "slow-jam.svg"]) {
-    const bytes = readFileSync(resolve(sampleDir, "logos", name));
-    logos.set(name, bytes);
-  }
   const result = await importSettledCsv({
     tournamentId: tournament.id,
     csvText,
-    logos,
   });
-  console.log(`Seeded ${tournament.name}: ${result.people} people, ${result.teams} teams`);
+  console.log(`Seeded ${tournament.name}: ${result.people} people`);
   await closeDb();
 }
 

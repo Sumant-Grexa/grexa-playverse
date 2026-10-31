@@ -7,9 +7,12 @@ import type { LivePayload } from "@/lib/types";
 export function PlayerStage({ live }: { live: LivePayload }) {
   const motionKey = live.player?.id ?? "empty";
   const notice = live.notice;
-  const shownAmount = notice?.amount ?? live.state.currentAmount;
-  const shownCaptain = notice?.captainName ?? live.state.currentCaptainName;
+  const overPurse = live.state.overPurse || Boolean(notice?.overPurse);
+  const shownAmount = notice && !notice.overPurse ? notice.amount : live.state.currentAmount;
+  const shownCaptain = notice && !notice.overPurse ? notice.captainName : live.state.currentCaptainName;
   const tape = live.tape.slice(0, 2);
+  const leadingTeam = live.teams.find((team) => team.id === live.state.currentTeamId);
+  const teamLabel = leadingTeam?.name ?? (shownCaptain ? `${shownCaptain}'s team` : "Waiting for a bid");
 
   return (
     <section className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.9fr)] lg:gap-8 xl:gap-10">
@@ -53,7 +56,7 @@ export function PlayerStage({ live }: { live: LivePayload }) {
                 </div>
                 <div>
                   <p className="text-lg text-mist/80">{shownCaptain ?? "No bid yet"}</p>
-                  <p className={`bid-card-figure mt-1 ${notice ? "text-danger" : ""}`}>
+                  <p className={`bid-card-figure mt-1 ${notice ? "text-danger" : ""} ${overPurse ? "bid-slashed" : ""}`}>
                     {shownAmount == null ? "—" : formatMoney(shownAmount)}
                   </p>
                 </div>
@@ -66,7 +69,13 @@ export function PlayerStage({ live }: { live: LivePayload }) {
                 tape.map((bid) => (
                   <li key={bid.id} className="flex items-center gap-3 py-2">
                     <Face name={bid.captainName} photoUrl={bid.captainPhotoUrl} />
-                    <span className="font-sans text-2xl font-extrabold text-paper">{formatMoney(bid.amount)}</span>
+                    <span
+                      className={`font-sans text-2xl font-extrabold ${
+                        bid.overPurse ? "bid-slashed text-danger" : "text-paper"
+                      }`}
+                    >
+                      {formatMoney(bid.amount)}
+                    </span>
                   </li>
                 ))
               )}
@@ -90,9 +99,9 @@ export function PlayerStage({ live }: { live: LivePayload }) {
         <p className="mt-2 truncate text-base text-paper sm:text-lg">
           {live.player?.name ?? "No player"}
           <span className="text-mist/50"> | </span>
-          {shownCaptain ? `${shownCaptain}'s team` : "Waiting for a bid"}
+          {teamLabel}
         </p>
-        <p className={`bid-stage-figure mt-3 ${notice ? "text-danger" : ""}`}>
+        <p className={`bid-stage-figure mt-3 ${notice ? "text-danger" : ""} ${overPurse ? "bid-slashed" : ""}`}>
           {shownAmount == null ? "—" : formatMoney(shownAmount)}
         </p>
         <div className="max-bid-split" aria-hidden="true" />
@@ -111,7 +120,15 @@ export function PlayerStage({ live }: { live: LivePayload }) {
                   <span className="block truncate text-lg font-semibold text-paper">
                     {team.captainName ?? "No captain"}
                   </span>
-                  <span className="block text-sm text-mist/70">Remaining: {formatLakhs(team.balance ?? 0)}</span>
+                  <span
+                    className={`block text-sm ${
+                      (team.balance ?? 0) < 0 || (overPurse && team.id === live.state.currentTeamId)
+                        ? "text-danger"
+                        : "text-mist/70"
+                    }`}
+                  >
+                    Remaining: {formatLakhs(team.balance ?? 0)}
+                  </span>
                 </span>
                 <RuleDot letter="W" state={team.women.state} label={team.women.label} />
                 <RuleDot letter="T" state={team.cross.state} label={team.cross.label} />

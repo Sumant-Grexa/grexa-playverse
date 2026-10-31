@@ -6,6 +6,7 @@ import { logout } from "@/lib/actions/admin";
 
 const publicLinks = [
   ["/board", "Auction"],
+  ["/teams", "Teams"],
   ["/leaderboard", "Leaderboard"],
 ];
 
@@ -37,7 +38,7 @@ export function SiteHeader({
         </p>
         <nav className="flex flex-wrap items-center gap-2">
           {links.map(([href, label]) => {
-            const current = pathname === href;
+            const current = pathname === href || (href !== "/admin" && pathname.startsWith(`${href}/`));
             return (
               <Link
                 key={href}

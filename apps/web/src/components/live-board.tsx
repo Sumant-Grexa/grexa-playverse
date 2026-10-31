@@ -38,8 +38,8 @@ export function LiveBoard({ initial }: { initial: LivePayload }) {
     }
     if (!id || seenNotice.current === id) return;
     seenNotice.current = id;
-    playBuzzSound();
-  }, [live.notice?.id]);
+    if (!live.notice?.overPurse) playBuzzSound();
+  }, [live.notice]);
 
   if (live.ceremony) {
     return <ClosingShow teams={live.ceremony.teams} />;
@@ -51,7 +51,11 @@ export function LiveBoard({ initial }: { initial: LivePayload }) {
       onPointerDown={primeSoldSound}
     >
       <SoldStamp saleId={live.marks.saleId} />
-      {live.notice ? <p className="rule-notice">{live.notice.message}</p> : null}
+      {live.notice ? (
+        <p className={live.notice.overPurse ? "rule-notice rule-notice-hold" : "rule-notice"}>
+          {live.notice.message}
+        </p>
+      ) : null}
       <div className="flex shrink-0 flex-col items-center gap-3 lg:gap-5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/brand/logo.png" alt="" className="w-14 sm:w-24 lg:w-28" />

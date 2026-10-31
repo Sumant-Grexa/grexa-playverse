@@ -1,11 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
+  createTeamAction,
   importRoster,
-  reassignCaptainAction,
-  removePlayerAction,
   savePlaceholdersAction,
   uploadPhoto,
 } from "@/lib/actions/admin";
@@ -50,13 +50,9 @@ export function TournamentManager({
           if (result.ok) router.refresh();
         }}>
           <input type="hidden" name="tournamentId" value={desk.id} />
-          <label className="block">
+          <label className="block md:col-span-2">
             <span className="text-sm">Settled CSV</span>
             <input name="csv" type="file" accept=".csv,text/csv" required className="mt-1 block w-full" />
-          </label>
-          <label className="block">
-            <span className="text-sm">Team logos</span>
-            <input name="logos" type="file" accept="image/*" multiple className="mt-1 block w-full" />
           </label>
           <div className="md:col-span-2">
             <button type="submit" disabled={pending} className="btn btn-cyan">
@@ -69,11 +65,70 @@ export function TournamentManager({
               <p className="mt-3">{importResult.ok ? importResult.message : importResult.error}</p>
             ) : (
               <p className="mt-3 max-w-2xl text-sm text-mist/70">
-                Captains arrive with an empty team. Everyone else stays in the auction. Importing again replaces this tournament&apos;s roster.
+                Import people only. Teams are created below from a captain name. Importing again updates people and leaves teams in place.
               </p>
             )}
           </div>
         </form>
+      </section>
+
+      <section className="arcade-panel p-6">
+        <h2 className="font-sans text-2xl font-semibold text-paper">Teams</h2>
+        <p className="mt-2 max-w-2xl text-sm text-mist/70">
+          Enter a captain name. The team starts as that person&apos;s team, empty, with ₹1,00,00,000.
+        </p>
+        <form action={createTeamAction} className="mt-4 flex flex-wrap items-end gap-3">
+          <input type="hidden" name="tournamentId" value={desk.id} />
+          <label>
+            <span className="text-sm">Captain name</span>
+            <input name="captainName" required placeholder="Asha Raman" className="field min-w-64" />
+          </label>
+          <button type="submit" className="btn btn-cyan">
+            Add team
+          </button>
+        </form>
+        <div className="mt-6 grid gap-3">
+          {desk.teams.map((team) => (
+            <Link key={team.id} href={`/admin/team/${team.id}`} className="flex items-center justify-between gap-3 border-b border-white/10 py-3">
+              <span>
+                <span className="block text-lg font-semibold text-paper">{team.name}</span>
+                <span className="block text-sm text-mist/70">
+                  Captain {team.captainName ?? "not set"}
+                  {" · "}
+                  {formatMoney(team.balance ?? 0)} left
+                  {" · "}
+                  {team.squad.length} bought
+                </span>
+              </span>
+              <span className="text-sm text-bid">Edit</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="arcade-panel arcade-panel-cyan p-6">
+        <h2 className="pixel-label text-bid">People</h2>
+        <ul className="mt-4 divide-y divide-white/10">
+          {desk.players.map((player) => (
+            <li key={player.tournamentPlayerId} className="flex flex-wrap items-center justify-between gap-3 py-3">
+              <span>
+                {player.name}
+                <span className="ml-2 text-sm text-mist/60">
+                  {player.isCaptain ? "captain" : player.status}
+                  {player.wantsToBeCaptain ? " · asked to captain" : ""}
+                </span>
+              </span>
+              <form action={uploadPhoto} className="flex items-center gap-2">
+                <input type="hidden" name="tournamentId" value={desk.id} />
+                <input type="hidden" name="personId" value={player.personId} />
+                <input name="photo" type="file" accept="image/*" className="max-w-48 text-sm" />
+                <button type="submit" className="btn btn-cyan text-sm">
+                  Save photo
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <form
@@ -85,12 +140,10 @@ export function TournamentManager({
       >
         <h2 className="pixel-label text-bid">Notes</h2>
         <p className="mt-2 max-w-2xl text-sm text-mist/70">
-          Each team starts with ₹1,00,00,000. The first bid is at least ₹3,00,000, in steps of ₹50,000.
-          From ₹10,00,000 the step is ₹1,00,000, and above ₹25,00,000 it is ₹2,00,000. Only the team
-          leader confirms a bid. If the purse is gone before the squad is full, the leaderboard shows a
-          negative gap: each open seat counts as 10 lakh, plus any spend past the purse. That 10 lakh
-          is only for the gap. The player still sells at the winning bid. A full side is
-          20 people, counting the leader. The numbers below are notes. They do not change those rules.
+          Scratch pad only. These numbers are not the live auction. Purse, opening bid, and bid jumps on
+          the board stay fixed in code: ₹1,00,00,000 purse, first bid ₹3,00,000, then steps of ₹50,000 /
+          ₹1,00,000 / ₹2,00,000. A full side is 20, counting the captain. Saving here does not change
+          those rules, the purse, or any bid already placed.
         </p>
         <input type="hidden" name="tournamentId" value={desk.id} />
         <div className="mt-4 grid gap-4 md:grid-cols-4">
@@ -130,124 +183,9 @@ export function TournamentManager({
           ))}
         </div>
         <button type="submit" disabled={pending} className="btn btn-gold mt-4">
-          Save placeholders
+          Save notes
         </button>
       </form>
-
-      <section className="grid gap-4">
-        {desk.teams.map((team) => (
-          <article key={team.id} className="arcade-panel p-5">
-            <div className="flex flex-wrap items-center gap-4">
-              {team.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={team.logoUrl} alt="" className="h-14 w-14 rounded-full bg-hall object-cover" />
-              ) : null}
-              <div>
-                <h2 className="font-sans text-2xl font-semibold text-paper">{team.name}</h2>
-                <p className="text-sm text-mist/70">
-                  Captain {team.captainName ?? "not set"}
-                  {" · "}
-                  {`${formatMoney(team.balance ?? 0)} left of ${formatMoney(team.openingBalance ?? 0)}`}
-                  {" · "}
-                  {team.squad.length} of 19 bought
-                  {team.squadGap < 0 ? ` · squad gap ${team.squadGap}` : ""}
-                </p>
-              </div>
-            </div>
-            <ul className="mt-4 grid gap-1 text-sm text-mist/80 sm:grid-cols-2">
-              {team.checks.map((check) => (
-                <li key={check.label}>
-                  {check.ok == null ? "—" : check.ok ? "Yes" : "Not yet"}
-                  {" · "}
-                  {check.label}
-                </li>
-              ))}
-            </ul>
-            <form
-              className="mt-4 flex flex-wrap items-end gap-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run(() => reassignCaptainAction(new FormData(event.currentTarget)));
-              }}
-            >
-              <input type="hidden" name="tournamentId" value={desk.id} />
-              <input type="hidden" name="teamId" value={team.id} />
-              <label>
-                <span className="text-sm">New captain</span>
-                <select name="personId" defaultValue={team.captainPersonId ?? ""} required className="field">
-                  {desk.players.map((player) => (
-                    <option key={player.personId} value={player.personId}>
-                      {player.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button type="submit" disabled={pending} className="btn btn-purple">
-                Reassign captain
-              </button>
-            </form>
-            {team.squad.length === 0 ? (
-              <p className="mt-4 text-sm text-mist/70">No players yet. The auction is the only way in.</p>
-            ) : (
-              <ul className="mt-4 divide-y divide-white/10">
-                {team.squad.map((member) => (
-                  <li key={member.tournamentPlayerId} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                    <span>
-                      {member.name}
-                      <span className="ml-2 text-sm text-gold">
-                        Remove returns {formatMoney(member.refundAmount)}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      className="btn btn-danger text-sm"
-                      onClick={() => {
-                        const confirmed = window.confirm(
-                          `Remove ${member.name} and return ${formatMoney(member.refundAmount)} to ${team.name}?`,
-                        );
-                        if (!confirmed) return;
-                        const data = new FormData();
-                        data.set("tournamentId", desk.id);
-                        data.set("teamId", team.id);
-                        data.set("tournamentPlayerId", member.tournamentPlayerId);
-                        void run(() => removePlayerAction(data));
-                      }}
-                    >
-                      Remove and refund
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
-        ))}
-      </section>
-
-      <section className="arcade-panel arcade-panel-cyan p-6">
-        <h2 className="pixel-label text-bid">People</h2>
-        <ul className="mt-4 divide-y divide-white/10">
-          {desk.players.map((player) => (
-            <li key={player.tournamentPlayerId} className="flex flex-wrap items-center justify-between gap-3 py-3">
-              <span>
-                {player.name}
-                <span className="ml-2 text-sm text-mist/60">
-                  {player.isCaptain ? "captain" : player.status}
-                  {player.wantsToBeCaptain ? " · asked to captain" : ""}
-                </span>
-              </span>
-              <form action={uploadPhoto} className="flex items-center gap-2">
-                <input type="hidden" name="tournamentId" value={desk.id} />
-                <input type="hidden" name="personId" value={player.personId} />
-                <input name="photo" type="file" accept="image/*" className="max-w-48 text-sm" />
-                <button type="submit" className="btn btn-cyan text-sm">
-                  Save photo
-                </button>
-              </form>
-            </li>
-          ))}
-        </ul>
-      </section>
 
       <section>
         <h2 className="pixel-label text-gold">Activity</h2>

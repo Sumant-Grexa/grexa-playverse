@@ -160,10 +160,10 @@ export function bidGate(input: {
 }): BidGate {
   const seatsLeft = AUCTION_SEATS - input.squadCount;
   if (seatsLeft <= 0) return { kind: "stop", reason: "This squad is full" };
-  if (input.amount > input.balance) return { kind: "stop", reason: "Not enough purse left" };
   const seatsAfter = seatsLeft - 1;
   const purseAfter = input.balance - input.amount;
-  if (seatsAfter > 0 && purseAfter < seatsAfter * MIN_BID) {
+  const overPurse = input.amount > input.balance;
+  if (!overPurse && seatsAfter > 0 && purseAfter < seatsAfter * MIN_BID) {
     return { kind: "stop", reason: "Keep runway for the remaining seats" };
   }
 
@@ -196,7 +196,7 @@ export function playerSkills(answers: Record<string, string> | null | undefined)
 
 export function playerBadge(answers: Record<string, string> | null | undefined) {
   if (!answers) return null;
-  const value = pick(answers, /^(badge|type|role)$/i);
+  const value = pick(answers, /badge|categor|type|^role$/i);
   return value || null;
 }
 
