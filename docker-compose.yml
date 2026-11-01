@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: playverse
       POSTGRES_DB: playverse
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +19,8 @@ services:
   web:
     build: .
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
     env_file:
       - .env
     environment:

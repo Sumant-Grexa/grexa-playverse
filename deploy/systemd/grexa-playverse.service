@@ -1,0 +1,22 @@
+# sudo cp deploy/systemd/grexa-playverse.service /etc/systemd/system/grexa-playverse.service
+# sudo sed -i 's|/opt/grexa-playverse|/path/to/this/repo|' /etc/systemd/system/grexa-playverse.service
+# sudo systemctl daemon-reload
+# sudo systemctl enable --now grexa-playverse
+# sudo systemctl restart grexa-playverse
+
+[Unit]
+Description=Grexa Playverse
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/grexa-playverse
+TimeoutStartSec=300
+ExecStart=/usr/bin/docker compose up -d --remove-orphans --build
+ExecStop=/usr/bin/docker compose stop
+
+[Install]
+WantedBy=multi-user.target
