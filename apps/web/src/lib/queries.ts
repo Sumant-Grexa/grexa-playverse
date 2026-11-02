@@ -17,17 +17,19 @@ import {
 } from "@playverse/db";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
-  AUCTION_SEATS,
   composition,
   memberFact,
   openingPurse,
   playerBadge,
   playerSkills,
   runwayMax,
+  seatPlan,
   squadChecks,
   squadGap,
+  teamSeats,
 } from "./rules";
 import { isUuid } from "./format";
+import { auctionPool } from "./pool";
 import { mediaUrl } from "./uploads";
 import type {
   LeaderboardPayload,
@@ -163,6 +165,10 @@ async function buildLive(
     .from(tournamentPlayers)
     .where(eq(tournamentPlayers.tournamentId, tournament.id));
   const answersByPerson = new Map(captainPlayerRows.map((row) => [row.personId, row.formAnswers]));
+  const plan = seatPlan(
+    captainPlayerRows.filter((row) => !captainPersonIds.has(row.personId)).length,
+    teams.length,
+  );
 
   const blockedRows = await db
     .select({
@@ -322,7 +328,11 @@ async function buildLive(
     const spent = spentByTeam.get(team.id) ?? 0;
     const captain = captainByTeam.get(team.id);
     const bought = squadCount.get(team.id) ?? 0;
-    const seatsLeft = Math.max(0, AUCTION_SEATS - bought);
+    const seats = teamSeats(
+      plan,
+      bought,
+      teams.filter((other) => other.id !== team.id).map((other) => squadCount.get(other.id) ?? 0),
+    );
     const balance = openingPurse(team.openingBalance) - spent;
     const members = [
       ...(captain ? [memberFact(answersByPerson.get(captain.personId))] : []),
@@ -338,8 +348,8 @@ async function buildLive(
       captainName: captain?.name ?? null,
       captainPhotoUrl: mediaUrl(captain?.photoPath),
       squadCount: bought,
-      seatsLeft,
-      runway: runwayMax(balance, seatsLeft),
+      seatsLeft: seats.left,
+      runway: runwayMax(balance, seats.runwaySeats),
       women: {
         state: mix.womenOk === true ? "ok" : flags.womenFail ? "warn" : "idle",
         label: mix.womenLabel,
@@ -376,15 +386,15 @@ async function buildLive(
     waiting,
     notice: overPurse
       ? {
-          id: `overpurse-${leading.id}-${state?.currentAmount}`,
-          teamId: leading.id,
-          captainName: captainName ?? "No captain",
-          amount: state?.currentAmount ?? 0,
-          message: `${captainName ?? "This team"} is over purse`,
-          womenFail: false,
-          crossFail: false,
-          overPurse: true,
-        }
+        id: `overpurse-${leading.id}-${state?.currentAmount}`,
+        teamId: leading.id,
+        captainName: captainName ?? "No captain",
+        amount: state?.currentAmount ?? 0,
+        message: `${captainName ?? "This team"} is over purse`,
+        womenFail: false,
+        crossFail: false,
+        overPurse: true,
+      }
       : liveNotice(blockedRows),
     marks: {
       lastBid: bidMark(lastWon),
@@ -515,12 +525,18 @@ export async function getLeaderboard(): Promise<LeaderboardPayload> {
     .where(and(eq(tournamentTeams.tournamentId, tournament.id), isNull(squadMembers.leftAt)));
   const squadCount = new Map<string, number>();
   for (const row of squadRows) squadCount.set(row.teamId, (squadCount.get(row.teamId) ?? 0) + 1);
+  const [poolRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(tournamentPlayers)
+    .where(auctionPool(tournament.id));
+  const seats = seatPlan(Number(poolRow?.count ?? 0), teamRows.length).base;
   const gaps = new Map(
     teamRows.map((team) => [
       team.id,
       squadGap({
         spent: spentByTeam.get(team.id) ?? 0,
         squadCount: squadCount.get(team.id) ?? 0,
+        seats,
         openingBalance: team.openingBalance,
       }),
     ]),
@@ -655,6 +671,10 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
     .orderBy(asc(tournamentPlayers.auctionOrder), asc(people.name));
 
   const captainPersonIds = new Set(captains.map((captain) => captain.personId));
+  const seats = seatPlan(
+    playerRows.filter((player) => !captainPersonIds.has(player.personId)).length,
+    teams.length,
+  ).base;
   const activity = await db
     .select()
     .from(activityLog)
@@ -689,6 +709,7 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
           squadGap: squadGap({
             spent,
             squadCount: roster.length,
+            seats,
             openingBalance: team.openingBalance,
           }),
           checks: squadChecks([

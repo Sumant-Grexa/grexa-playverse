@@ -2,13 +2,38 @@ import { formatMoney } from "./format";
 
 export const LAKH = 100_000;
 export const CRORE = 100 * LAKH;
-export const TEAM_SIZE = 20;
-export const AUCTION_SEATS = TEAM_SIZE - 1;
+export const DEFAULT_TEAM_SIZE = 20;
 export const MIN_BID = 3 * LAKH;
 export const SLOT_VALUE = 10 * LAKH;
 export const MIN_WOMEN = 2;
 export const MIN_DEPARTMENTS = 6;
 export const MAX_PER_DEPARTMENT = 6;
+
+/**
+ * How the auction pool (captains excluded) splits into squads.
+ * Every team is first filled to `base` auctioned players. Only once every team has its
+ * base squad do the `extra` leftover players go up as final lots, one per team.
+ * e.g. 105 pool / 8 teams -> 13 auctioned + captain = 14 each, then 1 final lot makes one team 15.
+ */
+export type SeatPlan = { base: number; extra: number };
+
+export function seatPlan(pool: number, teams: number): SeatPlan {
+  if (pool <= 0 || teams <= 0) return { base: DEFAULT_TEAM_SIZE - 1, extra: 0 };
+  const base = Math.floor(pool / teams);
+  return { base, extra: pool - base * teams };
+}
+
+/** Seats one team has: `cap` is the most it may buy now, `required` is what it still must buy. */
+export function teamSeats(plan: SeatPlan, squadCount: number, otherCounts: number[]) {
+  const holdsExtra = squadCount > plan.base;
+  const everyoneBase = squadCount >= plan.base && otherCounts.every((count) => count >= plan.base);
+  const taken = otherCounts.filter((count) => count > plan.base).length;
+  const extraOpen = plan.extra > 0 && (holdsExtra || (everyoneBase && taken < plan.extra));
+  const cap = plan.base + (extraOpen ? 1 : 0);
+  const left = Math.max(0, cap - squadCount);
+  const required = Math.max(0, plan.base - squadCount);
+  return { cap, left, required, runwaySeats: required > 0 ? required : left };
+}
 
 export function openingPurse(openingBalance: number | null | undefined) {
   return openingBalance == null ? CRORE : openingBalance;
@@ -44,10 +69,15 @@ export function bidProblem(amount: number, current: number | null) {
   return null;
 }
 
-export function squadGap(input: { spent: number; squadCount: number; openingBalance?: number | null }) {
+export function squadGap(input: {
+  spent: number;
+  squadCount: number;
+  seats: number;
+  openingBalance?: number | null;
+}) {
   const opening = openingPurse(input.openingBalance);
   const overspend = Math.max(0, input.spent - opening);
-  const remaining = Math.max(0, AUCTION_SEATS - input.squadCount);
+  const remaining = Math.max(0, input.seats - input.squadCount);
   const slotPenalty = input.spent >= opening ? remaining * SLOT_VALUE : 0;
   const lakhs = Math.round((overspend + slotPenalty) / LAKH);
   return lakhs === 0 ? 0 : -lakhs;
@@ -155,12 +185,15 @@ export function bidGate(input: {
   amount: number;
   balance: number;
   squadCount: number;
+  /** Seats the team must fill (the base share). */
+  seats: number;
+  /** Most seats the team may fill, including an open extra seat. */
+  cap: number;
   members: MemberFact[];
   incoming: MemberFact;
 }): BidGate {
-  const seatsLeft = AUCTION_SEATS - input.squadCount;
-  if (seatsLeft <= 0) return { kind: "stop", reason: "This squad is full" };
-  const seatsAfter = seatsLeft - 1;
+  if (input.cap - input.squadCount <= 0) return { kind: "stop", reason: "This squad is full" };
+  const seatsAfter = Math.max(0, input.seats - input.squadCount - 1);
   const purseAfter = input.balance - input.amount;
   const overPurse = input.amount > input.balance;
   if (!overPurse && seatsAfter > 0 && purseAfter < seatsAfter * MIN_BID) {

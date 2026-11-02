@@ -11,7 +11,8 @@ import {
   tournaments,
 } from "@playverse/db";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
-import { bidGate, bidProblem, CRORE, memberFact, openingPurse, overDepartmentCap } from "./rules";
+import { bidGate, bidProblem, CRORE, memberFact, openingPurse, overDepartmentCap, seatPlan, teamSeats } from "./rules";
+import { auctionPool } from "./pool";
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
@@ -53,9 +54,32 @@ async function teamSnapshot(tx: Tx, tournamentId: string, teamId: string, incomi
     .from(tournamentPlayers)
     .where(eq(tournamentPlayers.id, incomingPlayerId))
     .limit(1);
+  const [poolRow] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(tournamentPlayers)
+    .where(auctionPool(tournamentId));
+  const teamRows = await tx
+    .select({ id: tournamentTeams.id })
+    .from(tournamentTeams)
+    .where(eq(tournamentTeams.tournamentId, tournamentId));
+  const squadRows = await tx
+    .select({ teamId: squadMembers.tournamentTeamId, count: sql<number>`count(*)::int` })
+    .from(squadMembers)
+    .innerJoin(tournamentTeams, eq(tournamentTeams.id, squadMembers.tournamentTeamId))
+    .where(and(eq(tournamentTeams.tournamentId, tournamentId), isNull(squadMembers.leftAt)))
+    .groupBy(squadMembers.tournamentTeamId);
+  const plan = seatPlan(Number(poolRow?.count ?? 0), teamRows.length);
+  const countByTeam = new Map(squadRows.map((row) => [row.teamId, Number(row.count)]));
+  const seats = teamSeats(
+    plan,
+    squad.length,
+    teamRows.filter((row) => row.id !== teamId).map((row) => countByTeam.get(row.id) ?? 0),
+  );
   return {
     balance: openingPurse(team?.openingBalance) - Number(spentRow?.spent ?? 0),
     squadCount: squad.length,
+    seats: plan.base,
+    cap: seats.cap,
     members: [
       ...(captain ? [memberFact(captain.formAnswers)] : []),
       ...squad.map((member) => memberFact(member.formAnswers)),
@@ -142,6 +166,8 @@ export async function placeBid(teamId: string, amount: number) {
       amount,
       balance: snapshot.balance,
       squadCount: snapshot.squadCount,
+      seats: snapshot.seats,
+      cap: snapshot.cap,
       members: snapshot.members,
       incoming: snapshot.incoming,
     });
