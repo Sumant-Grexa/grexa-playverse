@@ -41,7 +41,7 @@ export function openingPurse(openingBalance: number | null | undefined) {
 
 export function bidStep(current: number) {
   if (current < 10 * LAKH) return 50_000;
-  if (current <= 25 * LAKH) return LAKH;
+  if (current < 25 * LAKH) return LAKH;
   return 2 * LAKH;
 }
 
@@ -170,6 +170,11 @@ export function overDepartmentCap(existingDepartments: string[], incoming: strin
   return null;
 }
 
+/** A captain who cannot afford the opening bid is locked out of bidding. */
+export function outOfMoney(balance: number | null | undefined) {
+  return (balance ?? 0) < MIN_BID;
+}
+
 export function runwayMax(balance: number, seatsLeft: number) {
   if (seatsLeft <= 0) return 0;
   if (seatsLeft === 1) return Math.max(0, balance);
@@ -193,15 +198,15 @@ export function bidGate(input: {
   incoming: MemberFact;
 }): BidGate {
   if (input.cap - input.squadCount <= 0) return { kind: "stop", reason: "This squad is full" };
-  const seatsAfter = Math.max(0, input.seats - input.squadCount - 1);
-  const purseAfter = input.balance - input.amount;
-  const overPurse = input.amount > input.balance;
-  if (!overPurse && seatsAfter > 0 && purseAfter < seatsAfter * MIN_BID) {
-    return { kind: "stop", reason: "Keep runway for the remaining seats" };
+  if (outOfMoney(input.balance)) {
+    return { kind: "stop", reason: "Purse is spent. Remaining seats are assigned after the auction" };
   }
+  // No runway reserve: a captain may spend the whole purse on one player.
+  const seatsAfter = Math.max(0, input.seats - input.squadCount - 1);
 
   const projected = composition([...input.members, input.incoming]);
-  const completing = seatsAfter === 0 || purseAfter === 0;
+  // Only a full squad is final; seats left after the purse runs out are filled by the admin.
+  const completing = seatsAfter === 0;
   const womenFail = completing && projected.womenOk === false;
   const crossFail = !projected.capOk || (completing && !projected.spreadOk);
   if (!womenFail && !crossFail) return { kind: "ok" };

@@ -142,7 +142,8 @@ export async function openNextLot(tx: Tx, tournamentId: string) {
 
 export async function placeBid(teamId: string, amount: number) {
   const db = getDb();
-  await db.transaction(async (tx) => {
+  // A rule-rejected bid is logged and committed so the public board shows it, then thrown.
+  const rejected = await db.transaction(async (tx): Promise<string | null> => {
     const tournament = await requireActive(tx);
     const [state] = await tx
       .select()
@@ -171,9 +172,10 @@ export async function placeBid(teamId: string, amount: number) {
       members: snapshot.members,
       incoming: snapshot.incoming,
     });
-    if (gate.kind === "stop") throw new Error(gate.reason);
     const overPurse = amount > snapshot.balance;
-    if (gate.kind === "buzz") {
+    if (gate.kind !== "ok") {
+      const message =
+        gate.kind === "stop" ? `${snapshot.captainName}: ${gate.reason}` : gate.message;
       await tx.insert(activityLog).values({
         tournamentId: tournament.id,
         actor: "admin",
@@ -184,14 +186,12 @@ export async function placeBid(teamId: string, amount: number) {
           teamId: team.id,
           captainName: snapshot.captainName,
           amount,
-          message: gate.message,
-          womenFail: gate.womenFail,
-          crossFail: gate.crossFail,
+          message,
+          womenFail: gate.kind === "buzz" && gate.womenFail,
+          crossFail: gate.kind === "buzz" && gate.crossFail,
         },
       });
-      const blocked = new Error(gate.message);
-      blocked.name = "AuctionBuzzError";
-      throw blocked;
+      return message;
     }
 
     await tx.insert(bids).values({
@@ -222,7 +222,13 @@ export async function placeBid(teamId: string, amount: number) {
         remaining: snapshot.balance,
       },
     });
+    return null;
   });
+  if (rejected) {
+    const blocked = new Error(rejected);
+    blocked.name = "AuctionBuzzError";
+    throw blocked;
+  }
 }
 
 export async function finalizeBid() {

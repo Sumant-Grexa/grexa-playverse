@@ -22,7 +22,6 @@ import {
   openingPurse,
   playerBadge,
   playerSkills,
-  runwayMax,
   seatPlan,
   squadChecks,
   squadGap,
@@ -349,7 +348,7 @@ async function buildLive(
       captainPhotoUrl: mediaUrl(captain?.photoPath),
       squadCount: bought,
       seatsLeft: seats.left,
-      runway: runwayMax(balance, seats.runwaySeats),
+      runway: Math.max(0, balance),
       women: {
         state: mix.womenOk === true ? "ok" : flags.womenFail ? "warn" : "idle",
         label: mix.womenLabel,
@@ -806,7 +805,12 @@ export async function getTeamDetail(teamId: string): Promise<TeamDetail | null> 
       amount: member.refundAmount,
     })),
     available: (selected?.players ?? [])
-      .filter((player) => player.status === "available" && !player.isCaptain && !captainIds.has(player.personId))
+      .filter(
+        (player) =>
+          (player.status === "available" || player.status === "unsold") &&
+          !player.isCaptain &&
+          !captainIds.has(player.personId),
+      )
       .map((player) => ({ tournamentPlayerId: player.tournamentPlayerId, name: player.name })),
     people: (selected?.players ?? []).map((player) => ({ personId: player.personId, name: player.name })),
   };

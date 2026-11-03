@@ -596,7 +596,9 @@ export async function addSquadMember(input: {
       )
       .limit(1);
     if (!player) throw new Error("That person is not in this tournament");
-    if (player.status !== "available") throw new Error(`${player.name} is not available`);
+    if (player.status !== "available" && player.status !== "unsold") {
+      throw new Error(`${player.name} is not available`);
+    }
     const [captain] = await tx
       .select({ id: captaincies.id })
       .from(captaincies)

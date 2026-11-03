@@ -5,7 +5,7 @@ import { ClosingShow } from "@/components/closing-show";
 import { SoldStamp } from "@/components/sold-stamp";
 import { finalizeBidAction, placeBidAction, resetTestAuctionAction, unsoldAction } from "@/lib/actions/admin";
 import { formatLakhs, formatMoney } from "@/lib/format";
-import { bidProblem, nextBidFloor, raiseStep } from "@/lib/rules";
+import { bidProblem, nextBidFloor, outOfMoney, raiseStep } from "@/lib/rules";
 import { playBuzzSound, primeSoldSound } from "@/lib/sold-sound";
 import type { LivePayload } from "@/lib/types";
 
@@ -48,7 +48,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
       if (!/^[1-8]$/.test(event.key)) return;
       const team = live.teams[Number(event.key) - 1];
       if (!team || !lotOpen || pending) return;
-      if (team.seatsLeft <= 0) return;
+      if (team.seatsLeft <= 0 || outOfMoney(team.balance)) return;
       event.preventDefault();
       place(team.id);
     }
@@ -211,6 +211,8 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
           const amount = amountFor(team.id);
           const typed = drafts[team.id] ?? "";
           const full = team.seatsLeft <= 0;
+          const spent = !full && outOfMoney(team.balance);
+          const locked = full || spent;
           const overPurse = amount > (team.balance ?? 0);
           const who = team.captainName ?? "No captain";
           return (
@@ -218,21 +220,21 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
               key={team.id}
               className={`flex items-center gap-2 border px-2 py-2 ${
                 current ? "border-bid bg-hall-2" : "border-white/15"
-              }`}
+              } ${locked ? "opacity-50" : ""}`}
             >
               <span className="w-6 shrink-0 text-center text-lg font-bold text-bid">{index + 1}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-lg font-semibold leading-tight text-paper">{who}</span>
                 <span className={`block truncate text-xs ${(team.balance ?? 0) < 0 ? "text-danger" : "text-mist/70"}`}>
                   {formatLakhs(team.balance ?? 0)} left · {team.seatsLeft} seats · W{team.women.state === "ok" ? "✓" : team.women.state === "warn" ? "!" : ""} T{team.cross.state === "ok" ? "✓" : team.cross.state === "warn" ? "!" : ""}
-                  {overPurse ? " · over purse" : ""}
+                  {spent ? " · purse spent, assign after auction" : full ? " · squad full" : overPurse ? " · over purse" : ""}
                 </span>
               </span>
               <button
                 type="button"
                 className="btn btn-step btn-purple"
                 aria-label={`Lower the bid for ${who}`}
-                disabled={pending || !lotOpen || amount <= floor}
+                disabled={pending || !lotOpen || locked || amount <= floor}
                 onClick={() => bump(team.id, -1)}
               >
                 -
@@ -240,7 +242,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
               <button
                 type="button"
                 className="btn btn-cyan min-w-32 px-3"
-                disabled={pending || !lotOpen || full}
+                disabled={pending || !lotOpen || locked}
                 onClick={() => place(team.id)}
               >
                 {formatMoney(amount)}
@@ -249,7 +251,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
                 type="button"
                 className="btn btn-step btn-cyan"
                 aria-label={`Raise the bid for ${who}`}
-                disabled={pending || !lotOpen}
+                disabled={pending || !lotOpen || locked}
                 onClick={() => bump(team.id, 1)}
               >
                 +
@@ -259,7 +261,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
                 aria-label={`Custom bid for ${who}`}
                 value={typed}
                 placeholder={String(floor)}
-                disabled={pending || !lotOpen}
+                disabled={pending || !lotOpen || locked}
                 onChange={(event) => {
                   setError(null);
                   setDrafts((prev) => ({ ...prev, [team.id]: event.target.value.replace(/[^\d]/g, "") }));
