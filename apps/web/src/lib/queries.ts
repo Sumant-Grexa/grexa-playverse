@@ -18,6 +18,8 @@ import {
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   composition,
+  isWoman,
+  MAX_PER_DEPARTMENT,
   memberFact,
   openingPurse,
   playerBadge,
@@ -85,6 +87,7 @@ export async function getLive(): Promise<LivePayload> {
         overPurse: false,
       },
       waiting: 0,
+      womenWaiting: 0,
       notice: null,
       marks: { lastBid: null, topBid: null, saleId: null },
       player: null,
@@ -182,12 +185,14 @@ async function buildLive(
     .limit(80);
 
   const waitingRows = await db
-    .select({ personId: tournamentPlayers.personId })
+    .select({ personId: tournamentPlayers.personId, formAnswers: tournamentPlayers.formAnswers })
     .from(tournamentPlayers)
     .where(
       and(eq(tournamentPlayers.tournamentId, tournament.id), eq(tournamentPlayers.status, "available")),
     );
-  const waiting = waitingRows.filter((row) => !captainPersonIds.has(row.personId)).length;
+  const waitingPool = waitingRows.filter((row) => !captainPersonIds.has(row.personId));
+  const waiting = waitingPool.length;
+  const womenWaiting = waitingPool.filter((row) => isWoman(memberFact(row.formAnswers).gender)).length;
 
   let player: LivePayload["player"] = null;
   let tape: LivePayload["tape"] = [];
@@ -357,6 +362,12 @@ async function buildLive(
         state: mix.crossOk ? "ok" : flags.crossFail ? "warn" : "idle",
         label: mix.crossLabel,
       },
+      needs: {
+        women: mix.womenNeeded,
+        departments: mix.departmentsNeeded,
+        departmentCounts: mix.departmentCounts,
+        departmentCap: MAX_PER_DEPARTMENT,
+      },
     };
   });
   const leading = liveTeams.find((team) => team.id === state?.currentTeamId) ?? null;
@@ -383,6 +394,7 @@ async function buildLive(
       overPurse,
     },
     waiting,
+    womenWaiting,
     notice: overPurse
       ? {
         id: `overpurse-${leading.id}-${state?.currentAmount}`,

@@ -142,6 +142,7 @@ export function PlayerStage({ live }: { live: LivePayload }) {
                   >
                     Remaining: {formatLakhs(team.balance ?? 0)}
                   </span>
+                  <TeamNeeds needs={team.needs} />
                 </span>
                 <RuleDot letter="W" state={team.women.state} label={team.women.label} />
                 <RuleDot letter="T" state={team.cross.state} label={team.cross.label} />
@@ -151,6 +152,33 @@ export function PlayerStage({ live }: { live: LivePayload }) {
         </div>
       </aside>
     </section>
+  );
+}
+
+/** What the squad still needs: women and departments, plus each department's fill against the cap. */
+function TeamNeeds({ needs }: { needs: LivePayload["teams"][number]["needs"] }) {
+  return (
+    <>
+      {needs.women > 0 || needs.departments > 0 ? (
+        <span className="mt-1 block text-sm text-bid">
+          {needs.women > 0 ? `W: ${needs.women} more needed` : null}
+          {needs.women > 0 && needs.departments > 0 ? <span className="text-mist/40"> · </span> : null}
+          {needs.departments > 0 ? `Depts: ${needs.departments} more needed` : null}
+        </span>
+      ) : null}
+      {needs.departmentCounts.length > 0 ? (
+        <span className="mt-0.5 block text-xs leading-snug text-mist/70">
+          {needs.departmentCounts.map((item, index) => (
+            <span key={item.name}>
+              {index > 0 ? <span className="text-mist/40"> · </span> : null}
+              <span className={item.count >= needs.departmentCap ? "text-danger" : ""}>
+                {item.name} {item.count}/{needs.departmentCap}
+              </span>
+            </span>
+          ))}
+        </span>
+      ) : null}
+    </>
   );
 }
 

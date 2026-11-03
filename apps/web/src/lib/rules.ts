@@ -113,16 +113,27 @@ export type Composition = {
   crossOk: boolean;
   womenLabel: string;
   crossLabel: string;
+  /** Women still needed to reach MIN_WOMEN (0 when met or gender is unknown). */
+  womenNeeded: number;
+  /** Distinct departments still needed to reach MIN_DEPARTMENTS. */
+  departmentsNeeded: number;
+  /** People per department, largest first, in the spelling first seen. */
+  departmentCounts: { name: string; count: number }[];
 };
 
 export function composition(members: MemberFact[]): Composition {
   const departments = members.map((member) => member.department.trim()).filter(Boolean);
   const unique = new Set(departments.map((department) => department.toLowerCase()));
   const counts = new Map<string, number>();
+  const spelling = new Map<string, string>();
   for (const department of departments) {
     const key = department.toLowerCase();
     counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (!spelling.has(key)) spelling.set(key, department);
   }
+  const departmentCounts = [...counts.entries()]
+    .map(([key, count]) => ({ name: spelling.get(key) ?? key, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const largest = Math.max(0, ...counts.values());
   const women = members.filter((member) => isWoman(member.gender)).length;
   const genderKnown = members.some((member) => member.gender.trim() !== "");
@@ -138,6 +149,9 @@ export function composition(members: MemberFact[]): Composition {
     spreadOk,
     capOk,
     crossOk: spreadOk && capOk,
+    womenNeeded: genderKnown ? Math.max(0, MIN_WOMEN - women) : 0,
+    departmentsNeeded: Math.max(0, MIN_DEPARTMENTS - unique.size),
+    departmentCounts,
     womenLabel: genderKnown
       ? `At least ${MIN_WOMEN} women, including the captain (${women} marked)`
       : `At least ${MIN_WOMEN} women, including the captain (add a gender column)`,
@@ -205,15 +219,30 @@ export function bidGate(input: {
   const seatsAfter = Math.max(0, input.seats - input.squadCount - 1);
 
   const projected = composition([...input.members, input.incoming]);
-  // Only a full squad is final; seats left after the purse runs out are filled by the admin.
-  const completing = seatsAfter === 0;
-  const womenFail = completing && projected.womenOk === false;
-  const crossFail = !projected.capOk || (completing && !projected.spreadOk);
+  // Look ahead: after this player joins, the seats still open must be able to cover the women
+  // and departments the squad still needs. On the last seat this is the plain completion check.
+  const seatsWord = seatsAfter === 1 ? "1 seat" : `${seatsAfter} seats`;
+  const womenFail = projected.womenNeeded > seatsAfter;
+  const spreadFail = projected.departmentsNeeded > seatsAfter;
+  const crossFail = !projected.capOk || spreadFail;
   if (!womenFail && !crossFail) return { kind: "ok" };
 
   const parts: string[] = [];
-  if (womenFail) parts.push(projected.womenLabel);
-  if (crossFail) parts.push(projected.crossLabel);
+  if (womenFail) {
+    parts.push(
+      seatsAfter === 0
+        ? projected.womenLabel
+        : `Only ${seatsWord} would be left but ${projected.womenNeeded} more women are needed`,
+    );
+  }
+  if (!projected.capOk) parts.push(projected.crossLabel);
+  else if (spreadFail) {
+    parts.push(
+      seatsAfter === 0
+        ? projected.crossLabel
+        : `Only ${seatsWord} would be left but ${projected.departmentsNeeded} more departments are needed`,
+    );
+  }
   return {
     kind: "buzz",
     message: parts.join(". "),

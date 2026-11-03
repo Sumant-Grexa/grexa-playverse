@@ -14,6 +14,8 @@ export type LivePayload = {
     overPurse: boolean;
   };
   waiting: number;
+  /** Women still waiting to be auctioned (captains and the player on the block excluded). */
+  womenWaiting: number;
   notice: {
     id: string;
     teamId: string;
@@ -59,6 +61,12 @@ export type LivePayload = {
     runway: number;
     women: { state: "idle" | "ok" | "warn"; label: string };
     cross: { state: "idle" | "ok" | "warn"; label: string };
+    needs: {
+      women: number;
+      departments: number;
+      departmentCounts: { name: string; count: number }[];
+      departmentCap: number;
+    };
   }[];
   ceremony: null | {
     teams: {

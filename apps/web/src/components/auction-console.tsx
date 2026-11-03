@@ -1,13 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ClosingShow } from "@/components/closing-show";
 import { SoldStamp } from "@/components/sold-stamp";
 import { finalizeBidAction, placeBidAction, resetTestAuctionAction, unsoldAction } from "@/lib/actions/admin";
 import { formatLakhs, formatMoney } from "@/lib/format";
-import { bidProblem, nextBidFloor, outOfMoney, raiseStep } from "@/lib/rules";
+import { bidProblem, isWoman, memberFact, nextBidFloor, outOfMoney, raiseStep } from "@/lib/rules";
 import { playBuzzSound, primeSoldSound } from "@/lib/sold-sound";
 import type { LivePayload } from "@/lib/types";
+
+/**
+ * Admin-only heads-up, never a block: a team that already has its women bids on a woman
+ * while the women still to come cannot cover what the other teams need.
+ */
+function womenSupplyWarning(live: LivePayload, teamId: string): string | null {
+  if (!live.player || !isWoman(memberFact(live.player.formAnswers).gender)) return null;
+  const team = live.teams.find((item) => item.id === teamId);
+  if (!team || team.needs.women > 0) return null;
+  const short = live.teams.filter((item) => item.id !== teamId && item.seatsLeft > 0 && item.needs.women > 0);
+  const needed = short.reduce((sum, item) => sum + item.needs.women, 0);
+  if (live.womenWaiting >= needed) return null;
+  const who = team.captainName ?? team.name;
+  const list = short.map((item) => `${item.captainName ?? item.name} (${item.needs.women})`).join(", ");
+  return (
+    `${who} already has the women they need. If they win ${live.player.name}, only ${live.womenWaiting} ` +
+    `${live.womenWaiting === 1 ? "woman is" : "women are"} left for teams that still need ${needed}: ${list}. ` +
+    `Those teams may not be able to fill their last seat.`
+  );
+}
 
 export function AuctionConsole({ initial }: { initial: LivePayload }) {
   const [live, setLive] = useState(initial);
@@ -17,6 +37,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [pending, setPending] = useState(false);
   const [stampPulse, setStampPulse] = useState(0);
+  const confirmedWarnings = useRef(new Set<string>());
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +123,13 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
     if (problem) {
       setError(problem);
       return;
+    }
+    const warning = womenSupplyWarning(live, teamId);
+    // Ask once per team per lot; later raises by the same team go straight through.
+    const confirmKey = `${live.player?.id ?? ""}:${teamId}`;
+    if (warning && !confirmedWarnings.current.has(confirmKey)) {
+      if (!window.confirm(`${warning}\n\nPlace the bid anyway?`)) return;
+      confirmedWarnings.current.add(confirmKey);
     }
     void run(async () => {
       const result = await placeBidAction(teamId, value);
