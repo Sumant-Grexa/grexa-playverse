@@ -11,8 +11,7 @@ export function PlayerStage({ live }: { live: LivePayload }) {
   const shownAmount = notice && !notice.overPurse ? notice.amount : live.state.currentAmount;
   const shownCaptain = notice && !notice.overPurse ? notice.captainName : live.state.currentCaptainName;
   const tape = live.tape.slice(0, 2);
-  const leadingTeam = live.teams.find((team) => team.id === live.state.currentTeamId);
-  const teamLabel = leadingTeam?.name ?? (shownCaptain ? `${shownCaptain}'s team` : "Waiting for a bid");
+  const topBid = live.marks.topBid;
   const badge = badgeLook(live.player?.badge);
   const hasBid = shownAmount != null || Boolean(shownCaptain);
 
@@ -106,17 +105,17 @@ export function PlayerStage({ live }: { live: LivePayload }) {
 
       <aside key={`bid-${motionKey}`} className="bid-arrive bid-stage arcade-panel flex min-h-[420px] min-w-0 flex-col overflow-hidden p-5 lg:p-6">
         <p className="text-sm font-semibold tracking-wide text-mist/80">Max bid</p>
-        <p className="mt-2 truncate text-base text-paper sm:text-lg">
-          {live.player?.name ?? "No player"}
-          <span className="text-mist/50"> | </span>
-          {teamLabel}
-        </p>
-        {shownAmount != null ? (
-          <p className={`bid-stage-figure mt-3 ${notice ? "text-danger" : ""} ${overPurse ? "bid-slashed" : ""}`}>
-            {formatMoney(shownAmount)}
-          </p>
+        {topBid ? (
+          <>
+            <p className="mt-2 truncate text-base text-paper sm:text-lg">
+              {topBid.playerName}
+              <span className="text-mist/50"> | </span>
+              {topBid.teamName}
+            </p>
+            <p className="bid-stage-figure mt-3">{formatMoney(topBid.amount)}</p>
+          </>
         ) : (
-          <p className="mt-3 text-lg text-mist/50">Waiting for a bid</p>
+          <p className="mt-3 text-lg text-mist/50">No player sold yet</p>
         )}
         <div className="max-bid-split" aria-hidden="true" />
         <div className="flex flex-1 flex-col">
