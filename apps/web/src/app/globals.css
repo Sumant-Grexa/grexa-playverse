@@ -736,3 +736,13 @@ h2.pixel-label {
     transition: none !important;
   }
 }
+
+/* Board team row holding the current bid: a soft cyan-to-violet wash that fades out. */
+.team-row-leading {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 217, 227, 0.16) 0%,
+    rgba(125, 42, 231, 0.12) 55%,
+    rgba(125, 42, 231, 0) 100%
+  );
+}

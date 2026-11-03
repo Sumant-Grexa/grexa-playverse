@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { badgeLook, formatLakhs, formatMoney, monogram } from "@/lib/format";
+import { outOfMoney } from "@/lib/rules";
 import type { LivePayload } from "@/lib/types";
 
 export function PlayerStage({ live }: { live: LivePayload }) {
@@ -121,16 +123,23 @@ export function PlayerStage({ live }: { live: LivePayload }) {
         <div className="flex flex-1 flex-col">
           {live.teams.map((team) => {
             const leading = live.state.currentTeamId === team.id && live.state.currentAmount != null;
+            const spent = !leading && outOfMoney(team.balance);
             return (
               <div
                 key={team.id}
-                className={`flex items-center gap-3 border-b border-white/10 py-6 last:border-b-0 ${
-                  leading ? "bg-hall-2/80" : ""
-                }`}
+                aria-current={leading ? "true" : undefined}
+                className={`flex items-center gap-3 border-b border-white/10 py-6 transition-colors last:border-b-0 ${
+                  leading ? "team-row-leading" : "hover:bg-hall-2/50"
+                } ${spent ? "opacity-40" : ""}`}
               >
-                <Face name={team.captainName ?? "No captain"} photoUrl={team.captainPhotoUrl} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-lg font-semibold text-paper">
+                <Link href={`/teams/${team.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                  <Face name={team.captainName ?? "No captain"} photoUrl={team.captainPhotoUrl} />
+                  <span className="min-w-0 flex-1">
+                  <span
+                    className={`block truncate text-paper ${
+                      leading ? "text-xl font-black" : "text-lg font-semibold"
+                    }`}
+                  >
                     {team.captainName ?? "No captain"}
                   </span>
                   <span
@@ -143,7 +152,8 @@ export function PlayerStage({ live }: { live: LivePayload }) {
                     Remaining: {formatLakhs(team.balance ?? 0)}
                   </span>
                   <TeamNeeds needs={team.needs} />
-                </span>
+                  </span>
+                </Link>
                 <RuleDot letter="W" state={team.women.state} label={team.women.label} />
                 <RuleDot letter="T" state={team.cross.state} label={team.cross.label} />
               </div>
