@@ -102,9 +102,17 @@ export async function importRoster(_prev: ActionResult | null, formData: FormDat
       csvText: await file.text(),
     });
     refresh();
+    const { saved, failed } = result.photos;
+    let photos = saved ? ` Saved ${saved} photos from Google Drive.` : "";
+    if (failed.length) {
+      const names = failed.slice(0, 5).join(", ") + (failed.length > 5 ? ", …" : "");
+      photos +=
+        ` ${failed.length} photos could not be downloaded (${names}).` +
+        " Share the Drive folder as “Anyone with the link can view” and import again.";
+    }
     return {
       ok: true,
-      message: `Imported ${result.people} people. Teams stay as they are.`,
+      message: `Imported ${result.people} people. Teams stay as they are.${photos}`,
     };
   } catch (error) {
     return fail(error);
@@ -151,7 +159,15 @@ export async function createTeamAction(formData: FormData) {
       ? { filename: file.name, bytes: Buffer.from(await file.arrayBuffer()) }
       : undefined;
   try {
-    await createTeam({ tournamentId, captainName, photo });
+    await createTeam({
+      tournamentId,
+      captainName,
+      photo,
+      captain: {
+        gender: String(formData.get("captainGender") ?? ""),
+        department: String(formData.get("captainDepartment") ?? ""),
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create the team";
     redirect(`/admin/tournament?error=${encodeURIComponent(message)}`);
@@ -179,6 +195,10 @@ export async function updateTeamAction(formData: FormData): Promise<ActionResult
       name: String(formData.get("name") ?? ""),
       logo,
       captainPhoto,
+      captain: {
+        gender: String(formData.get("captainGender") ?? ""),
+        department: String(formData.get("captainDepartment") ?? ""),
+      },
     });
     refresh();
     return { ok: true, message: "Team saved." };

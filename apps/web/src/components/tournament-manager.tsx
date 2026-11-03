@@ -10,6 +10,7 @@ import {
   uploadPhoto,
 } from "@/lib/actions/admin";
 import { formatMoney, formatWhen, monogram } from "@/lib/format";
+import { CaptainFactsFields } from "./captain-facts-fields";
 import type { ActionResult, TournamentDesk, TournamentSummary } from "@/lib/types";
 
 export function TournamentManager({
@@ -75,12 +76,12 @@ export function TournamentManager({
       <section className="arcade-panel p-6">
         <h2 className="font-sans text-2xl font-semibold text-paper">Teams</h2>
         <p className="mt-2 max-w-2xl text-sm text-mist/70">
-          Add a captain by name and photo. The side starts as that person&apos;s team, empty, with
+          Add a captain by name, gender, department, and photo. Gender and department count toward
+          the women (W) and department (T) checks. The side starts as that person&apos;s team, empty, with
           ₹1,00,00,000. You can rename it later.
         </p>
         <form
           action={createTeamAction}
-          encType="multipart/form-data"
           className="mt-4 flex flex-wrap items-end gap-3"
         >
           <input type="hidden" name="tournamentId" value={desk.id} />
@@ -92,6 +93,7 @@ export function TournamentManager({
             <span className="text-sm">Captain photo</span>
             <input name="photo" type="file" accept="image/*" className="mt-1 block w-full max-w-56" />
           </label>
+          <CaptainFactsFields departments={desk.departments} required listId="new-captain-departments" />
           <button type="submit" className="btn btn-cyan">
             Add team
           </button>
@@ -161,7 +163,7 @@ export function TournamentManager({
         <p className="mt-2 max-w-2xl text-sm text-mist/70">
           Scratch pad only. These numbers are not the live auction. Purse, opening bid, and bid jumps on
           the board stay fixed in code: ₹1,00,00,000 purse, first bid ₹3,00,000, then steps of ₹50,000 /
-          ₹1,00,000 / ₹2,00,000. A full side is 20, counting the captain. Saving here does not change
+          ₹1,00,000 / ₹2,00,000. A full side is the auction pool split evenly across teams, plus the captain; any leftover players go up as final lots once every team is full. Saving here does not change
           those rules, the purse, or any bid already placed.
         </p>
         <input type="hidden" name="tournamentId" value={desk.id} />

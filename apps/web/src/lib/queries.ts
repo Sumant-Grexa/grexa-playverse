@@ -664,6 +664,7 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
       photoPath: people.photoPath,
       status: tournamentPlayers.status,
       wantsToBeCaptain: tournamentPlayers.wantsToBeCaptain,
+      formAnswers: tournamentPlayers.formAnswers,
     })
     .from(tournamentPlayers)
     .innerJoin(people, eq(people.id, tournamentPlayers.personId))
@@ -706,6 +707,8 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
           captainPersonId: captain?.personId ?? null,
           captainName: captain?.name ?? null,
           captainPhotoUrl: mediaUrl(captain?.photoPath),
+          captainGender: captain ? memberFact(captain.formAnswers).gender : "",
+          captainDepartment: captain ? memberFact(captain.formAnswers).department : "",
           squadGap: squadGap({
             spent,
             squadCount: roster.length,
@@ -736,6 +739,7 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
         wantsToBeCaptain: player.wantsToBeCaptain,
         isCaptain: captainPersonIds.has(player.personId),
       })),
+      departments: departmentList(playerRows.map((player) => memberFact(player.formAnswers).department)),
       activity: activity.map((entry) => ({
         id: entry.id,
         action: entry.action,
@@ -788,6 +792,9 @@ export async function getTeamDetail(teamId: string): Promise<TeamDetail | null> 
     captainName: card?.captainName ?? null,
     captainPhotoUrl: card?.captainPhotoUrl ?? null,
     captainPersonId: deskTeam?.captainPersonId ?? null,
+    captainGender: deskTeam?.captainGender ?? "",
+    captainDepartment: deskTeam?.captainDepartment ?? "",
+    departments: selected?.departments ?? [],
     remaining: card?.remaining ?? openingPurse(team.openingBalance),
     openingBalance: openingPurse(team.openingBalance),
     squadCount: card?.squadCount ?? 0,
@@ -852,4 +859,13 @@ async function listTeamCards(tournamentId: string) {
       remaining: openingPurse(team.openingBalance) - spent,
     };
   });
+}
+
+function departmentList(values: string[]) {
+  const byKey = new Map<string, string>();
+  for (const value of values) {
+    const department = value.trim();
+    if (department && !byKey.has(department.toLowerCase())) byKey.set(department.toLowerCase(), department);
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b));
 }

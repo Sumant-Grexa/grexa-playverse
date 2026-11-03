@@ -126,6 +126,8 @@ export type TournamentDesk = {
       captainPersonId: string | null;
       captainName: string | null;
       captainPhotoUrl: string | null;
+      captainGender: string;
+      captainDepartment: string;
       squad: { tournamentPlayerId: string; name: string; refundAmount: number }[];
       checks: { label: string; ok: boolean | null }[];
       squadGap: number;
@@ -139,6 +141,8 @@ export type TournamentDesk = {
       wantsToBeCaptain: boolean;
       isCaptain: boolean;
     }[];
+    /** Departments seen in form answers, for the captain department picker. */
+    departments: string[];
     activity: {
       id: string;
       action: string;
@@ -172,6 +176,9 @@ export type TeamDetail = {
   captainName: string | null;
   captainPhotoUrl: string | null;
   captainPersonId: string | null;
+  captainGender: string;
+  captainDepartment: string;
+  departments: string[];
   remaining: number;
   openingBalance: number;
   squadCount: number;

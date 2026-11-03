@@ -17,6 +17,8 @@ import { CRORE } from "./rules";
 import { column, parseCsv } from "./csv";
 import { safeName, saveUpload } from "./uploads";
 
+type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
 const KNOWN = new Set([
   "name",
   "wantstobecaptain",
@@ -136,7 +138,8 @@ export async function importSettledCsv(input: {
     });
   });
 
-  return { people: rows.length };
+  const photos = await importDrivePhotos(input.tournamentId);
+  return { people: rows.length, photos };
 }
 
 export async function reassignCaptain(input: {
@@ -396,14 +399,41 @@ export async function savePlayerPhoto(input: {
   await db.update(people).set({ photoPath }).where(eq(people.id, input.personId));
 }
 
+export type CaptainFacts = { gender?: string; department?: string };
+
+/** Write the captain's gender/department into their form answers so squad checks count them. */
+async function saveCaptainFacts(tx: Tx, tournamentId: string, personId: string, facts: CaptainFacts) {
+  const gender = facts.gender?.trim() ?? "";
+  const department = facts.department?.trim() ?? "";
+  if (!gender && !department) return;
+  const [player] = await tx
+    .select({ id: tournamentPlayers.id, formAnswers: tournamentPlayers.formAnswers })
+    .from(tournamentPlayers)
+    .where(and(eq(tournamentPlayers.tournamentId, tournamentId), eq(tournamentPlayers.personId, personId)))
+    .limit(1);
+  if (!player) return;
+  const answers = { ...(player.formAnswers ?? {}) };
+  const put = (pattern: RegExp, fallbackKey: string, value: string) => {
+    if (!value) return;
+    const key = Object.keys(answers).find((item) => pattern.test(item)) ?? fallbackKey;
+    answers[key] = value;
+  };
+  put(/gender/i, "gender", gender);
+  put(/department/i, "department", department);
+  await tx.update(tournamentPlayers).set({ formAnswers: answers }).where(eq(tournamentPlayers.id, player.id));
+}
+
 export async function createTeam(input: {
   tournamentId: string;
   captainName: string;
   photo?: { filename: string; bytes: Buffer };
+  captain: CaptainFacts;
 }) {
   const db = getDb();
   const captainName = input.captainName.trim();
   if (!captainName) throw new Error("Enter the captain name");
+  if (!input.captain.gender?.trim()) throw new Error("Choose the captain's gender");
+  if (!input.captain.department?.trim()) throw new Error("Enter the captain's department");
   return db.transaction(async (tx) => {
     await tx.execute(sql`select id from tournaments where id = ${input.tournamentId} for update`);
     const [tournament] = await tx
@@ -426,6 +456,7 @@ export async function createTeam(input: {
       .where(and(eq(captaincies.personId, person.personId), isNull(captaincies.endedAt)))
       .limit(1);
     if (busy) throw new Error(`${captainName} already captains a team`);
+    await saveCaptainFacts(tx, input.tournamentId, person.personId, input.captain);
     const [last] = await tx
       .select({ sortOrder: tournamentTeams.sortOrder })
       .from(tournamentTeams)
@@ -473,6 +504,7 @@ export async function updateTeam(input: {
   name: string;
   logo?: { filename: string; bytes: Buffer };
   captainPhoto?: { filename: string; bytes: Buffer };
+  captain?: CaptainFacts;
 }) {
   const db = getDb();
   const name = input.name.trim();
@@ -499,6 +531,14 @@ export async function updateTeam(input: {
       .update(tournamentTeams)
       .set({ name: nextName, logoPath })
       .where(eq(tournamentTeams.id, input.teamId));
+    if (input.captain) {
+      const [current] = await tx
+        .select({ personId: captaincies.personId })
+        .from(captaincies)
+        .where(and(eq(captaincies.tournamentTeamId, input.teamId), isNull(captaincies.endedAt)))
+        .limit(1);
+      if (current) await saveCaptainFacts(tx, input.tournamentId, current.personId, input.captain);
+    }
     if (input.captainPhoto) {
       const [captain] = await tx
         .select({ personId: captaincies.personId })
@@ -636,4 +676,81 @@ async function uniqueTeamName(
   let n = 2;
   while (taken.has(`${desired} ${n}`.toLowerCase())) n += 1;
   return `${desired} ${n}`;
+}
+
+const PHOTO_ANSWER = /photo|picture|image|selfie/i;
+const MIME_EXT: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+};
+
+function driveFileId(link: string) {
+  const match = link.match(/[?&]id=([\w-]{10,})/) ?? link.match(/\/d\/([\w-]{10,})/);
+  return match?.[1] ?? null;
+}
+
+async function downloadDriveImage(fileId: string) {
+  // The thumbnail endpoint returns JPEG/PNG even for HEIC uploads; the download URL is the fallback.
+  const urls = [
+    `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`,
+    `https://drive.usercontent.google.com/download?id=${fileId}&export=download`,
+  ];
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(20_000) });
+      const type = (response.headers.get("content-type") ?? "").split(";")[0]!.trim();
+      const ext = MIME_EXT[type];
+      if (response.ok && ext) return { ext, bytes: Buffer.from(await response.arrayBuffer()) };
+    } catch {
+      // try the next URL
+    }
+  }
+  return null;
+}
+
+/**
+ * Copy each player's Google Drive photo (from the form's photo column) into local uploads.
+ * Skips photos uploaded by hand and Drive photos already copied for the same file.
+ */
+async function importDrivePhotos(tournamentId: string) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      personId: people.id,
+      name: people.name,
+      photoPath: people.photoPath,
+      formAnswers: tournamentPlayers.formAnswers,
+    })
+    .from(tournamentPlayers)
+    .innerJoin(people, eq(people.id, tournamentPlayers.personId))
+    .where(eq(tournamentPlayers.tournamentId, tournamentId));
+
+  const queue = rows.flatMap((row) => {
+    const answers = row.formAnswers ?? {};
+    const key = Object.keys(answers).find((item) => PHOTO_ANSWER.test(item));
+    const fileId = key ? driveFileId(answers[key] ?? "") : null;
+    if (!fileId) return [];
+    const manual = row.photoPath && !row.photoPath.includes("/drive-");
+    const copied = row.photoPath?.includes(`/drive-${fileId}.`);
+    return manual || copied ? [] : [{ ...row, fileId }];
+  });
+
+  let saved = 0;
+  const failed: string[] = [];
+  async function work() {
+    for (let row = queue.shift(); row; row = queue.shift()) {
+      const image = await downloadDriveImage(row.fileId);
+      if (!image) {
+        failed.push(row.name);
+        continue;
+      }
+      const photoPath = await saveUpload(`photos/${row.personId}/drive-${row.fileId}${image.ext}`, image.bytes);
+      await db.update(people).set({ photoPath }).where(eq(people.id, row.personId));
+      saved += 1;
+    }
+  }
+  await Promise.all(Array.from({ length: 6 }, work));
+  return { saved, failed };
 }

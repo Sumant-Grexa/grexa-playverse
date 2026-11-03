@@ -10,6 +10,7 @@ import {
   updateTeamAction,
 } from "@/lib/actions/admin";
 import { formatMoney } from "@/lib/format";
+import { CaptainFactsFields } from "./captain-facts-fields";
 import type { ActionResult, TeamDetail } from "@/lib/types";
 
 export function TeamEditor({ team }: { team: TeamDetail }) {
@@ -62,6 +63,16 @@ export function TeamEditor({ team }: { team: TeamDetail }) {
           <span className="text-sm">Team name</span>
           <input name="name" defaultValue={team.name} required className="field" />
         </label>
+        {team.captainPersonId ? (
+          <div key={team.captainPersonId} className="mt-4 grid gap-4 sm:grid-cols-2">
+            <CaptainFactsFields
+              departments={team.departments}
+              gender={team.captainGender}
+              department={team.captainDepartment}
+              listId="captain-departments"
+            />
+          </div>
+        ) : null}
         <label className="mt-4 block">
           <span className="text-sm">Captain photo</span>
           <input name="captainPhoto" type="file" accept="image/*" className="mt-1 block w-full" />
