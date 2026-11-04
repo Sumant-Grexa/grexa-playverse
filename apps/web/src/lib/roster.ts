@@ -13,7 +13,7 @@ import {
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { openNextLot } from "./auction";
 import { defaultTeamName } from "./format";
-import { CRORE } from "./rules";
+import { CRORE, openingPurse } from "./rules";
 import { column, parseCsv } from "./csv";
 import { safeName, saveUpload } from "./uploads";
 
@@ -315,6 +315,88 @@ export async function removeSquadMember(input: {
         teamName: seat.teamName,
         refundedAmount: won?.amount ?? 0,
         captaincyClosed: Boolean(captain),
+      },
+    });
+  });
+}
+
+export async function updatePlayerPrice(input: {
+  tournamentId: string;
+  teamId: string;
+  tournamentPlayerId: string;
+  amount: number;
+}) {
+  if (!Number.isInteger(input.amount) || input.amount < 0) {
+    throw new Error("Enter the price as a whole number");
+  }
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from tournaments where id = ${input.tournamentId} for update`);
+    const [team] = await tx
+      .select()
+      .from(tournamentTeams)
+      .where(and(eq(tournamentTeams.id, input.teamId), eq(tournamentTeams.tournamentId, input.tournamentId)))
+      .limit(1);
+    if (!team) throw new Error("Team not found");
+    const [seat] = await tx
+      .select({ id: squadMembers.id, name: people.name })
+      .from(squadMembers)
+      .innerJoin(tournamentPlayers, eq(tournamentPlayers.id, squadMembers.tournamentPlayerId))
+      .innerJoin(people, eq(people.id, tournamentPlayers.personId))
+      .where(
+        and(
+          eq(squadMembers.tournamentTeamId, input.teamId),
+          eq(squadMembers.tournamentPlayerId, input.tournamentPlayerId),
+          isNull(squadMembers.leftAt),
+        ),
+      )
+      .limit(1);
+    if (!seat) throw new Error("That player is not on this team");
+
+    const [won] = await tx
+      .select()
+      .from(bids)
+      .where(
+        and(
+          eq(bids.tournamentPlayerId, input.tournamentPlayerId),
+          eq(bids.tournamentTeamId, input.teamId),
+          eq(bids.status, "won"),
+        ),
+      )
+      .limit(1);
+
+    const [spentRow] = await tx
+      .select({ spent: sql<number>`coalesce(sum(${bids.amount}), 0)::int` })
+      .from(bids)
+      .where(and(eq(bids.tournamentTeamId, input.teamId), eq(bids.status, "won")));
+    const spentAfter = Number(spentRow?.spent ?? 0) - (won?.amount ?? 0) + input.amount;
+    if (spentAfter > openingPurse(team.openingBalance)) {
+      throw new Error(`${team.name} cannot afford that price`);
+    }
+
+    if (won) {
+      await tx.update(bids).set({ amount: input.amount }).where(eq(bids.id, won.id));
+    } else {
+      await tx.insert(bids).values({
+        tournamentId: input.tournamentId,
+        tournamentPlayerId: input.tournamentPlayerId,
+        tournamentTeamId: input.teamId,
+        amount: input.amount,
+        status: "won",
+      });
+    }
+
+    await tx.insert(activityLog).values({
+      tournamentId: input.tournamentId,
+      actor: "admin",
+      action: "squad.price",
+      entityType: "player",
+      entityId: input.tournamentPlayerId,
+      payload: {
+        playerName: seat.name,
+        teamName: team.name,
+        fromAmount: won?.amount ?? 0,
+        toAmount: input.amount,
       },
     });
   });

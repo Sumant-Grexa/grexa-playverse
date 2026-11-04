@@ -21,6 +21,7 @@ import {
   removeSquadMember,
   savePlaceholders,
   savePlayerPhoto,
+  updatePlayerPrice,
   updateTeam,
 } from "../roster";
 import type { ActionResult } from "../types";
@@ -232,6 +233,24 @@ export async function removePlayerAction(formData: FormData): Promise<ActionResu
     });
     refresh();
     return { ok: true, message: "Player removed and the bid was returned." };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function updatePlayerPriceAction(formData: FormData): Promise<ActionResult> {
+  try {
+    await assertAdmin();
+    const text = String(formData.get("amount") ?? "").replace(/[,\s₹]/g, "");
+    if (!/^\d+$/.test(text)) throw new Error("Enter the price as a whole number");
+    await updatePlayerPrice({
+      tournamentId: String(formData.get("tournamentId") ?? ""),
+      teamId: String(formData.get("teamId") ?? ""),
+      tournamentPlayerId: String(formData.get("tournamentPlayerId") ?? ""),
+      amount: Number(text),
+    });
+    refresh();
+    return { ok: true, message: "Price updated." };
   } catch (error) {
     return fail(error);
   }
