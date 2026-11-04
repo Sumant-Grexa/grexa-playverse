@@ -1,0 +1,1 @@
+ALTER TABLE "tournament_players" ADD COLUMN "min_bid" integer;

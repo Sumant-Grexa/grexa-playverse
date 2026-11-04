@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   createTeamAction,
+  deletePlayerAction,
   importRoster,
+  reauctionAction,
   savePlaceholdersAction,
   uploadPhoto,
 } from "@/lib/actions/admin";
-import { formatMoney, formatWhen, monogram } from "@/lib/format";
+import { formatLakhs, formatMoney, formatWhen, monogram } from "@/lib/format";
+import { MIN_BID } from "@/lib/rules";
 import { CaptainFactsFields } from "./captain-facts-fields";
 import type { ActionResult, TournamentDesk, TournamentSummary } from "@/lib/types";
 
@@ -24,6 +27,23 @@ export function TournamentManager({
   const [importResult, setImportResult] = useState<ActionResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [peopleMessage, setPeopleMessage] = useState<string | null>(null);
+  const [reauctionMessage, setReauctionMessage] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [minBid, setMinBid] = useState(String(MIN_BID));
+  const unsold = desk.players.filter((player) => player.status === "unsold" && !player.isCaptain);
+  const pickedUnsold = unsold.filter((player) => picked.has(player.tournamentPlayerId));
+  const allPicked = unsold.length > 0 && pickedUnsold.length === unsold.length;
+  const minBidValue = Number(minBid);
+
+  function togglePick(id: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function run(task: () => Promise<ActionResult>) {
     setPending(true);
@@ -127,8 +147,90 @@ export function TournamentManager({
         </div>
       </section>
 
+      <section className="arcade-panel p-6">
+        <h2 className="pixel-label text-bid">Unsold players</h2>
+        {reauctionMessage ? <p className="mt-3 text-gold">{reauctionMessage}</p> : null}
+        {unsold.length === 0 ? (
+          <p className="mt-3 text-mist/70">Nobody is unsold right now.</p>
+        ) : (
+          <form
+            className="mt-4"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              setPending(true);
+              setReauctionMessage(null);
+              const result = await reauctionAction(data);
+              setPending(false);
+              setReauctionMessage(result.ok ? (result.message ?? "Saved.") : result.error);
+              if (result.ok) {
+                setPicked(new Set());
+                router.refresh();
+              }
+            }}
+          >
+            <input type="hidden" name="tournamentId" value={desk.id} />
+            <label className="flex items-center gap-2 text-sm text-mist/80">
+              <input
+                type="checkbox"
+                checked={allPicked}
+                onChange={() =>
+                  setPicked(allPicked ? new Set() : new Set(unsold.map((player) => player.tournamentPlayerId)))
+                }
+              />
+              Select all ({unsold.length} unsold)
+            </label>
+            <ul className="mt-3 divide-y divide-white/10">
+              {unsold.map((player) => (
+                <li key={player.tournamentPlayerId} className="py-2">
+                  <label className="flex cursor-pointer items-center gap-3">
+                    <input
+                      type="checkbox"
+                      name="tournamentPlayerId"
+                      value={player.tournamentPlayerId}
+                      checked={picked.has(player.tournamentPlayerId)}
+                      onChange={() => togglePick(player.tournamentPlayerId)}
+                    />
+                    <span>{player.name}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <label>
+                <span className="text-sm">Minimum bid (₹)</span>
+                <input
+                  name="minBid"
+                  type="number"
+                  min={50_000}
+                  step={50_000}
+                  required
+                  value={minBid}
+                  onChange={(event) => setMinBid(event.target.value)}
+                  className="field w-48"
+                />
+              </label>
+              <span className="pb-2 text-sm text-mist/60">
+                {Number.isInteger(minBidValue) && minBidValue > 0 ? formatLakhs(minBidValue) : ""}
+              </span>
+              <button
+                type="submit"
+                disabled={pending || pickedUnsold.length === 0}
+                className="btn btn-cyan"
+              >
+                Re-auction {pickedUnsold.length || ""} selected
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-mist/60">
+              They join the end of the queue. The first bid on each must be at least this amount.
+            </p>
+          </form>
+        )}
+      </section>
+
       <section className="arcade-panel arcade-panel-cyan p-6">
         <h2 className="pixel-label text-bid">People</h2>
+        {peopleMessage ? <p className="mt-3 text-gold">{peopleMessage}</p> : null}
         <ul className="mt-4 divide-y divide-white/10">
           {desk.players.map((player) => (
             <li key={player.tournamentPlayerId} className="flex flex-wrap items-center justify-between gap-3 py-3">
@@ -145,6 +247,32 @@ export function TournamentManager({
                 <input name="photo" type="file" accept="image/*" className="max-w-48 text-sm" />
                 <button type="submit" className="btn btn-cyan text-sm">
                   Save photo
+                </button>
+                <button
+                  type="button"
+                  disabled={pending || player.isCaptain}
+                  title={player.isCaptain ? "Change the captain before deleting" : undefined}
+                  className="btn btn-danger text-sm"
+                  onClick={async () => {
+                    if (
+                      !window.confirm(
+                        `Delete ${player.name} from this tournament? Their bids and squad seat are removed and any price paid goes back to the team. This cannot be undone.`,
+                      )
+                    ) {
+                      return;
+                    }
+                    const data = new FormData();
+                    data.set("tournamentId", desk.id);
+                    data.set("tournamentPlayerId", player.tournamentPlayerId);
+                    setPending(true);
+                    setPeopleMessage(null);
+                    const result = await deletePlayerAction(data);
+                    setPending(false);
+                    setPeopleMessage(result.ok ? (result.message ?? "Deleted.") : result.error);
+                    if (result.ok) router.refresh();
+                  }}
+                >
+                  Delete
                 </button>
               </form>
             </li>

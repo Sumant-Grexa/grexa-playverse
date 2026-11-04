@@ -56,6 +56,8 @@ export type LivePayload = {
     badge: string | null;
     captainOf: string | null;
     lastSeason: { teamName: string; amount: number; refunded: boolean } | null;
+    /** Opening-bid floor set when the player was sent back to auction. */
+    minBid: number | null;
   } | null;
   tape: {
     id: string;

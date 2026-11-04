@@ -50,16 +50,21 @@ export function raiseStep(current: number | null) {
   return bidStep(current);
 }
 
-export function nextBidFloor(current: number | null) {
-  if (current == null || current <= 0) return MIN_BID;
+export function openingFloor(minBid?: number | null) {
+  return minBid != null && minBid > 0 ? minBid : MIN_BID;
+}
+
+export function nextBidFloor(current: number | null, minBid?: number | null) {
+  if (current == null || current <= 0) return openingFloor(minBid);
   return current + bidStep(current);
 }
 
-export function bidProblem(amount: number, current: number | null) {
+export function bidProblem(amount: number, current: number | null, minBid?: number | null) {
+  const opening = openingFloor(minBid);
   if (!Number.isInteger(amount) || amount < 0) return "Enter the bid as a whole number";
-  if (amount < MIN_BID) return `The minimum bid is ${formatMoney(MIN_BID)}`;
+  if (amount < opening) return `The minimum bid is ${formatMoney(opening)}`;
   if (current == null || current <= 0) {
-    if (amount % 50_000 !== 0) return `Open at ${formatMoney(MIN_BID)} or higher, in steps of ${formatMoney(50_000)}`;
+    if (amount % 50_000 !== 0) return `Open at ${formatMoney(opening)} or higher, in steps of ${formatMoney(50_000)}`;
     return null;
   }
   const step = bidStep(current);

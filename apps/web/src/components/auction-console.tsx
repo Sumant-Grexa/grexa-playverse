@@ -160,7 +160,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
       gender: memberFact(live.player.formAnswers).gender.trim(),
     }
     : null;
-  const floor = nextBidFloor(live.state.currentAmount);
+  const floor = nextBidFloor(live.state.currentAmount, live.player?.minBid);
   const step = raiseStep(live.state.currentAmount);
   const lotOpen = live.state.status === "open" && live.player;
 
@@ -221,7 +221,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
 
   function place(teamId: string) {
     const value = amountFor(teamId);
-    const problem = bidProblem(value, live.state.currentAmount);
+    const problem = bidProblem(value, live.state.currentAmount, live.player?.minBid);
     if (problem) {
       setError(problem);
       return;

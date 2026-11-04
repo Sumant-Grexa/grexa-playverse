@@ -78,6 +78,8 @@ export const tournamentPlayers = pgTable(
       .default(sql`'{}'::jsonb`),
     auctionOrder: integer("auction_order").notNull().default(0),
     status: playerStatus("status").notNull().default("available"),
+    /** Opening-bid floor for this player when sent back to auction; null uses the default. */
+    minBid: integer("min_bid"),
   },
   (table) => [
     uniqueIndex("tournament_players_tournament_person").on(

@@ -402,6 +402,83 @@ export async function updatePlayerPrice(input: {
   });
 }
 
+/** Removes a player from the tournament entirely (bids and squad seat go with it). */
+export async function deleteTournamentPlayer(input: { tournamentId: string; tournamentPlayerId: string }) {
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select id from tournaments where id = ${input.tournamentId} for update`);
+    const [player] = await tx
+      .select({ id: tournamentPlayers.id, personId: people.id, name: people.name })
+      .from(tournamentPlayers)
+      .innerJoin(people, eq(people.id, tournamentPlayers.personId))
+      .where(
+        and(
+          eq(tournamentPlayers.id, input.tournamentPlayerId),
+          eq(tournamentPlayers.tournamentId, input.tournamentId),
+        ),
+      )
+      .limit(1);
+    if (!player) throw new Error("That player is not in this tournament");
+
+    const [live] = await tx
+      .select({ status: auctionState.status })
+      .from(auctionState)
+      .where(
+        and(
+          eq(auctionState.tournamentId, input.tournamentId),
+          eq(auctionState.tournamentPlayerId, player.id),
+        ),
+      )
+      .limit(1);
+    if (live?.status === "open") throw new Error(`${player.name} is on the block right now`);
+
+    const [captain] = await tx
+      .select({ id: captaincies.id })
+      .from(captaincies)
+      .where(and(eq(captaincies.personId, player.personId), isNull(captaincies.endedAt)))
+      .limit(1);
+    if (captain) throw new Error(`${player.name} is a captain. Change the captain first`);
+
+    const [won] = await tx
+      .select({ amount: bids.amount, teamName: tournamentTeams.name })
+      .from(bids)
+      .innerJoin(tournamentTeams, eq(tournamentTeams.id, bids.tournamentTeamId))
+      .where(and(eq(bids.tournamentPlayerId, player.id), eq(bids.status, "won")))
+      .limit(1);
+
+    // squad_members and bids cascade; auction_state.tournament_player_id is set null.
+    await tx.delete(tournamentPlayers).where(eq(tournamentPlayers.id, player.id));
+
+    const [otherEntry] = await tx
+      .select({ id: tournamentPlayers.id })
+      .from(tournamentPlayers)
+      .where(eq(tournamentPlayers.personId, player.personId))
+      .limit(1);
+    const [pastCaptaincy] = await tx
+      .select({ id: captaincies.id })
+      .from(captaincies)
+      .where(eq(captaincies.personId, player.personId))
+      .limit(1);
+    const personDeleted = !otherEntry && !pastCaptaincy;
+    if (personDeleted) await tx.delete(people).where(eq(people.id, player.personId));
+
+    await tx.insert(activityLog).values({
+      tournamentId: input.tournamentId,
+      actor: "admin",
+      action: "player.delete",
+      entityType: "player",
+      entityId: player.id,
+      payload: {
+        playerName: player.name,
+        teamName: won?.teamName ?? null,
+        refundedAmount: won?.amount ?? 0,
+        personDeleted,
+      },
+    });
+    return { name: player.name, teamName: won?.teamName ?? null };
+  });
+}
+
 export async function savePlaceholders(input: {
   tournamentId: string;
   previousTournamentId: string | null;

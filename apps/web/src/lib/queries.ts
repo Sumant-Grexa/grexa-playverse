@@ -208,6 +208,7 @@ async function buildLive(
         name: people.name,
         photoPath: people.photoPath,
         formAnswers: tournamentPlayers.formAnswers,
+        minBid: tournamentPlayers.minBid,
       })
       .from(tournamentPlayers)
       .innerJoin(people, eq(people.id, tournamentPlayers.personId))
@@ -231,6 +232,7 @@ async function buildLive(
           ? (teams.find((team) => team.id === captainTeam.teamId)?.name ?? null)
           : null,
         lastSeason: await lastSeasonSale(db, tournament.previousTournamentId, lot.personId),
+        minBid: lot.minBid,
       };
 
       const bidRows = await db

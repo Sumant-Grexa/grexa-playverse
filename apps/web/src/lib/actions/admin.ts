@@ -11,11 +11,12 @@ import {
   SESSION_COOKIE,
   verifySessionToken,
 } from "../auth";
-import { finalizeBid, markUnsold, placeBid, resetTestAuction } from "../auction";
+import { finalizeBid, markUnsold, placeBid, reauctionPlayers, resetTestAuction } from "../auction";
 import { createGame, saveGame } from "../games";
 import {
   addSquadMember,
   createTeam,
+  deleteTournamentPlayer,
   importSettledCsv,
   reassignCaptain,
   removeSquadMember,
@@ -251,6 +252,42 @@ export async function updatePlayerPriceAction(formData: FormData): Promise<Actio
     });
     refresh();
     return { ok: true, message: "Price updated." };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function deletePlayerAction(formData: FormData): Promise<ActionResult> {
+  try {
+    await assertAdmin();
+    const deleted = await deleteTournamentPlayer({
+      tournamentId: String(formData.get("tournamentId") ?? ""),
+      tournamentPlayerId: String(formData.get("tournamentPlayerId") ?? ""),
+    });
+    refresh();
+    const from = deleted.teamName ? ` and refunded to ${deleted.teamName}` : "";
+    return { ok: true, message: `${deleted.name} deleted${from}.` };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function reauctionAction(formData: FormData): Promise<ActionResult> {
+  try {
+    await assertAdmin();
+    const text = String(formData.get("minBid") ?? "").replace(/[,\s₹]/g, "");
+    if (!/^\d+$/.test(text)) throw new Error("Enter the minimum bid as a whole number");
+    const result = await reauctionPlayers({
+      tournamentId: String(formData.get("tournamentId") ?? ""),
+      tournamentPlayerIds: formData.getAll("tournamentPlayerId").map(String),
+      minBid: Number(text),
+    });
+    refresh();
+    const opened = result.opened ? ` ${result.opened} is up now.` : "";
+    return {
+      ok: true,
+      message: `${result.count} player${result.count === 1 ? "" : "s"} sent back to auction.${opened}`,
+    };
   } catch (error) {
     return fail(error);
   }

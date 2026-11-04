@@ -10,7 +10,7 @@ import {
   tournamentTeams,
   tournaments,
 } from "@playverse/db";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { bidGate, bidProblem, CRORE, memberFact, openingPurse, overDepartmentCap, seatPlan, teamSeats } from "./rules";
 import { auctionPool } from "./pool";
 
@@ -159,7 +159,12 @@ export async function placeBid(teamId: string, amount: number) {
       .where(and(eq(tournamentTeams.id, teamId), eq(tournamentTeams.tournamentId, tournament.id)))
       .limit(1);
     if (!team) throw new Error("That team is not in this tournament");
-    const problem = bidProblem(amount, state.currentAmount);
+    const [lot] = await tx
+      .select({ minBid: tournamentPlayers.minBid })
+      .from(tournamentPlayers)
+      .where(eq(tournamentPlayers.id, state.tournamentPlayerId))
+      .limit(1);
+    const problem = bidProblem(amount, state.currentAmount, lot?.minBid);
     if (problem) throw new Error(problem);
 
     const snapshot = await teamSnapshot(tx, tournament.id, team.id, state.tournamentPlayerId);
@@ -398,7 +403,7 @@ export async function resetTestAuction() {
     `);
     await tx
       .update(tournamentPlayers)
-      .set({ status: "available" })
+      .set({ status: "available", minBid: null })
       .where(eq(tournamentPlayers.tournamentId, tournament.id));
     await tx
       .update(tournamentTeams)
@@ -414,5 +419,71 @@ export async function resetTestAuction() {
       payload: { playerName },
     });
     return playerName;
+  });
+}
+
+/**
+ * Sends chosen unsold players back to the auction queue, after everyone still waiting,
+ * with an opening-bid floor. Opens the next lot if the hammer is idle.
+ */
+export async function reauctionPlayers(input: {
+  tournamentId: string;
+  tournamentPlayerIds: string[];
+  minBid: number;
+}) {
+  const ids = [...new Set(input.tournamentPlayerIds)];
+  if (ids.length === 0) throw new Error("Pick at least one unsold player");
+  if (!Number.isInteger(input.minBid) || input.minBid <= 0 || input.minBid % 50_000 !== 0) {
+    throw new Error("Set the minimum bid in steps of ₹50,000");
+  }
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select id from tournaments where id = ${input.tournamentId} for update`);
+    const chosen = await tx
+      .select({
+        id: tournamentPlayers.id,
+        status: tournamentPlayers.status,
+        auctionOrder: tournamentPlayers.auctionOrder,
+        name: people.name,
+      })
+      .from(tournamentPlayers)
+      .innerJoin(people, eq(people.id, tournamentPlayers.personId))
+      .where(and(eq(tournamentPlayers.tournamentId, input.tournamentId), inArray(tournamentPlayers.id, ids)));
+    if (chosen.length !== ids.length) throw new Error("Some of those players are not in this tournament");
+    const notUnsold = chosen.filter((player) => player.status !== "unsold");
+    if (notUnsold.length > 0) {
+      throw new Error(`${notUnsold.map((player) => player.name).join(", ")} is not unsold any more`);
+    }
+
+    const [orderRow] = await tx
+      .select({ last: sql<number>`coalesce(max(${tournamentPlayers.auctionOrder}), 0)::int` })
+      .from(tournamentPlayers)
+      .where(eq(tournamentPlayers.tournamentId, input.tournamentId));
+    let order = Number(orderRow?.last ?? 0);
+    // Keep their original relative order.
+    for (const player of [...chosen].sort((a, b) => a.auctionOrder - b.auctionOrder)) {
+      order += 1;
+      await tx
+        .update(tournamentPlayers)
+        .set({ status: "available", minBid: input.minBid, auctionOrder: order })
+        .where(eq(tournamentPlayers.id, player.id));
+    }
+
+    await tx.insert(activityLog).values({
+      tournamentId: input.tournamentId,
+      actor: "admin",
+      action: "auction.reauction",
+      entityType: "tournament",
+      entityId: input.tournamentId,
+      payload: { playerNames: chosen.map((player) => player.name), minBid: input.minBid },
+    });
+
+    const [state] = await tx
+      .select({ status: auctionState.status })
+      .from(auctionState)
+      .where(eq(auctionState.tournamentId, input.tournamentId))
+      .limit(1);
+    const opened = state && state.status !== "open" ? await openNextLot(tx, input.tournamentId) : null;
+    return { count: chosen.length, opened };
   });
 }
