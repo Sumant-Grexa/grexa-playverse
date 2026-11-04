@@ -5,9 +5,9 @@ import { ClosingShow } from "@/components/closing-show";
 import { SoldStamp } from "@/components/sold-stamp";
 import { finalizeBidAction, placeBidAction, resetTestAuctionAction, unsoldAction } from "@/lib/actions/admin";
 import { formatLakhs, formatMoney } from "@/lib/format";
-import { bidProblem, isWoman, memberFact, nextBidFloor, outOfMoney, raiseStep } from "@/lib/rules";
+import { bidProblem, isWoman, MAX_PER_DEPARTMENT, memberFact, nextBidFloor, outOfMoney, raiseStep } from "@/lib/rules";
 import { playBuzzSound, primeSoldSound } from "@/lib/sold-sound";
-import type { LivePayload } from "@/lib/types";
+import type { LivePayload, SquadOutlook } from "@/lib/types";
 
 /**
  * Admin-only heads-up, never a block: a team that already has its women bids on a woman
@@ -26,6 +26,101 @@ function womenSupplyWarning(live: LivePayload, teamId: string): string | null {
     `${who} already has the women they need. If they win ${live.player.name}, only ${live.womenWaiting} ` +
     `${live.womenWaiting === 1 ? "woman is" : "women are"} left for teams that still need ${needed}: ${list}. ` +
     `Those teams may not be able to fill their last seat.`
+  );
+}
+
+function Outlook({ outlook }: { outlook: SquadOutlook }) {
+  const womenBad = outlook.womenShort > 0;
+  const deptBad = outlook.departmentsShort > 0;
+  return (
+    <>
+      <span className={womenBad ? "text-danger" : outlook.womenNeeded === 0 ? "text-bid" : ""}>
+        W {outlook.women}/{outlook.women + outlook.womenNeeded}
+        {womenBad ? ` (short ${outlook.womenShort})` : ""}
+      </span>
+      {" · "}
+      <span className={deptBad ? "text-danger" : outlook.departmentsNeeded === 0 ? "text-bid" : ""}>
+        Depts {outlook.departments}/{outlook.departments + outlook.departmentsNeeded}
+        {deptBad ? ` (short ${outlook.departmentsShort})` : ""}
+      </span>
+      {" · "}
+      <span className={outlook.capOk ? "" : "text-danger"}>
+        Max/dept {outlook.largest}/{MAX_PER_DEPARTMENT}
+      </span>
+    </>
+  );
+}
+
+function plural(count: number, one: string, many: string) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+function needsText(outlook: SquadOutlook) {
+  const parts: string[] = [];
+  if (outlook.womenNeeded > 0) parts.push(plural(outlook.womenNeeded, "woman", "women"));
+  if (outlook.departmentsNeeded > 0) parts.push(plural(outlook.departmentsNeeded, "dept", "depts"));
+  return parts.join(" + ");
+}
+
+/** One plain sentence for the desk: why this team is fine, tight, short, or blocked. */
+function shortfallSentence(
+  team: LivePayload["teams"][number],
+  player: { name: string; department: string; gender: string } | null,
+) {
+  const { seatsToFill, now, ifWins } = team.projection;
+  const seats = (count: number) => plural(count, "seat", "seats");
+  const needNow = needsText(now);
+  if (!now.capOk) return `Over the cap: ${now.largest} people from one department (max ${MAX_PER_DEPARTMENT}).`;
+  if (now.womenShort > 0 || now.departmentsShort > 0) {
+    return `Short now: needs ${needNow} with only ${seats(seatsToFill)} to fill.`;
+  }
+  if (!ifWins || !player) {
+    return needNow ? `Needs ${needNow} with ${seats(seatsToFill)} to fill.` : "All set: women and departments met.";
+  }
+  const who = [player.gender, player.department].filter(Boolean).join(" ");
+  const winning = `winning ${player.name}${who ? ` (${who})` : ""}`;
+  if (!ifWins.capOk) {
+    return `${player.department || "That department"} is at the cap of ${MAX_PER_DEPARTMENT}; ${winning} makes ${ifWins.largest}.`;
+  }
+  const needAfter = needsText(ifWins);
+  if (!ifWins.ok) {
+    return `Tight: needs ${needNow} with ${seats(seatsToFill)}; ${winning} leaves ${seats(ifWins.seatsAfter)} for ${needAfter}.`;
+  }
+  if (!needNow) return "All set: women and departments met.";
+  return `Needs ${needNow} with ${seats(seatsToFill)}; ${winning} leaves ${seats(ifWins.seatsAfter)}${needAfter ? ` for ${needAfter}` : ", all met"}.`;
+}
+
+/** Always-on runway check: where the squad stands now, and what winning the current lot does to it. */
+function Projection({
+  team,
+  player,
+}: {
+  team: LivePayload["teams"][number];
+  player: { name: string; department: string; gender: string } | null;
+}) {
+  const { seatsToFill, now, ifWins } = team.projection;
+  const playerName = player?.name ?? null;
+  const trouble =
+    !now.capOk || now.womenShort > 0 || now.departmentsShort > 0 || (ifWins != null && !ifWins.ok);
+  return (
+    <span className="mt-1 block text-xs leading-snug text-mist/70">
+      <span className={`block ${trouble ? "text-danger" : "text-paper/80"}`}>{shortfallSentence(team, player)}</span>
+      <span className="block">
+        <span className="text-mist/50">Now · {seatsToFill} to fill · </span>
+        <Outlook outlook={now} />
+      </span>
+      {ifWins ? (
+        <span className="block">
+          <span className="text-mist/50">
+            If wins{playerName ? ` ${playerName}` : ""} · {ifWins.seatsAfter} left ·{" "}
+          </span>
+          <Outlook outlook={ifWins} />
+          <span className={ifWins.ok ? "text-bid" : "font-semibold text-danger"}>
+            {ifWins.ok ? " · OK" : " · BLOCKED"}
+          </span>
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -58,6 +153,13 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
     };
   }, []);
 
+  const blockPlayer = live.player
+    ? {
+      name: live.player.name,
+      department: live.player.department,
+      gender: memberFact(live.player.formAnswers).gender.trim(),
+    }
+    : null;
   const floor = nextBidFloor(live.state.currentAmount);
   const step = raiseStep(live.state.currentAmount);
   const lotOpen = live.state.status === "open" && live.player;
@@ -233,6 +335,22 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
         </button>
       </div>
       <p className="text-sm text-mist/60">Keys 1–8 bid that team. + raises the amount before you send it.</p>
+      <p className="text-sm text-mist/70">
+        <span className="text-mist/50">Pool · </span>
+        {live.waiting} waiting · {live.womenWaiting} {live.womenWaiting === 1 ? "woman" : "women"}
+        {live.player?.department ? (
+          <>
+            <span className="text-mist/50"> · On block: </span>
+            {live.player.department}
+          </>
+        ) : null}
+        {live.departmentsWaiting.length > 0 ? (
+          <>
+            <span className="text-mist/50"> · </span>
+            {live.departmentsWaiting.map((item) => `${item.name} ${item.count}`).join(" · ")}
+          </>
+        ) : null}
+      </p>
       <div className="grid gap-2 lg:grid-cols-2">
         {live.teams.map((team, index) => {
           const current = live.state.currentTeamId === team.id && live.state.currentAmount != null;
@@ -257,6 +375,7 @@ export function AuctionConsole({ initial }: { initial: LivePayload }) {
                   {formatLakhs(team.balance ?? 0)} left · {team.seatsLeft} seats · W{team.women.state === "ok" ? "✓" : team.women.state === "warn" ? "!" : ""} T{team.cross.state === "ok" ? "✓" : team.cross.state === "warn" ? "!" : ""}
                   {spent ? " · purse spent, assign after auction" : full ? " · squad full" : overPurse ? " · over purse" : ""}
                 </span>
+                <Projection team={team} player={blockPlayer} />
               </span>
               <button
                 type="button"

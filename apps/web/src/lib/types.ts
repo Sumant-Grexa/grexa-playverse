@@ -1,3 +1,16 @@
+export type SquadOutlook = {
+  women: number;
+  womenNeeded: number;
+  /** Women needed beyond the seats left to fill them. */
+  womenShort: number;
+  departments: number;
+  departmentsNeeded: number;
+  /** Departments needed beyond the seats left to fill them. */
+  departmentsShort: number;
+  largest: number;
+  capOk: boolean;
+};
+
 export type LivePayload = {
   tournament: {
     id: string;
@@ -16,6 +29,8 @@ export type LivePayload = {
   waiting: number;
   /** Women still waiting to be auctioned (captains and the player on the block excluded). */
   womenWaiting: number;
+  /** Departments still in the waiting pool, largest first. */
+  departmentsWaiting: { name: string; count: number }[];
   notice: {
     id: string;
     teamId: string;
@@ -67,6 +82,14 @@ export type LivePayload = {
       departments: number;
       departmentCounts: { name: string; count: number }[];
       departmentCap: number;
+    };
+    /** Always-on runway check for the admin desk. */
+    projection: {
+      /** Seats the team still must fill to reach its base share. */
+      seatsToFill: number;
+      now: SquadOutlook;
+      /** What the squad looks like if this team wins the player on the block. */
+      ifWins: (SquadOutlook & { seatsAfter: number; ok: boolean }) | null;
     };
   }[];
   ceremony: null | {

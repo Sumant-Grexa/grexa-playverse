@@ -18,6 +18,7 @@ import {
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   composition,
+  squadProjection,
   isWoman,
   MAX_PER_DEPARTMENT,
   memberFact,
@@ -88,6 +89,7 @@ export async function getLive(): Promise<LivePayload> {
       },
       waiting: 0,
       womenWaiting: 0,
+      departmentsWaiting: [],
       notice: null,
       marks: { lastBid: null, topBid: null, saleId: null },
       player: null,
@@ -195,6 +197,8 @@ async function buildLive(
   const womenWaiting = waitingPool.filter((row) => isWoman(memberFact(row.formAnswers).gender)).length;
 
   let player: LivePayload["player"] = null;
+  let lotPersonId: string | null = null;
+  let lotIsCaptain = false;
   let tape: LivePayload["tape"] = [];
   if (state?.tournamentPlayerId) {
     const [lot] = await db
@@ -213,6 +217,8 @@ async function buildLive(
     if (lot) {
       const captainTeam = openCaptains.find((row) => row.personId === lot.personId);
       const answers = lot.formAnswers ?? {};
+      lotPersonId = lot.personId;
+      lotIsCaptain = captainPersonIds.has(lot.personId);
       player = {
         id: lot.id,
         name: lot.name,
@@ -345,6 +351,12 @@ async function buildLive(
     ];
     const mix = composition(members);
     const flags = latestFlags(blockedRows, team.id);
+    const seatsToFill = Math.max(0, plan.base - bought);
+    const incoming =
+      player && !lotIsCaptain && state?.status === "open" && seats.left > 0
+        ? memberFact(player.formAnswers)
+        : null;
+    const ahead = incoming ? squadProjection(members, incoming, plan.base, bought) : null;
     return {
       id: team.id,
       name: team.name,
@@ -368,6 +380,33 @@ async function buildLive(
         departments: mix.departmentsNeeded,
         departmentCounts: mix.departmentCounts,
         departmentCap: MAX_PER_DEPARTMENT,
+      },
+      projection: {
+        seatsToFill,
+        now: {
+          women: mix.women,
+          womenNeeded: mix.womenNeeded,
+          womenShort: Math.max(0, mix.womenNeeded - seatsToFill),
+          departments: mix.departments,
+          departmentsNeeded: mix.departmentsNeeded,
+          departmentsShort: Math.max(0, mix.departmentsNeeded - seatsToFill),
+          largest: mix.largest,
+          capOk: mix.capOk,
+        },
+        ifWins: ahead
+          ? {
+            seatsAfter: ahead.seatsAfter,
+            women: ahead.projected.women,
+            womenNeeded: ahead.projected.womenNeeded,
+            womenShort: ahead.womenShort,
+            departments: ahead.projected.departments,
+            departmentsNeeded: ahead.projected.departmentsNeeded,
+            departmentsShort: ahead.departmentsShort,
+            largest: ahead.projected.largest,
+            capOk: ahead.projected.capOk,
+            ok: !ahead.womenFail && !ahead.crossFail,
+          }
+          : null,
       },
     };
   });
@@ -396,6 +435,9 @@ async function buildLive(
     },
     waiting,
     womenWaiting,
+    departmentsWaiting: composition(
+      waitingPool.filter((row) => row.personId !== lotPersonId).map((row) => memberFact(row.formAnswers)),
+    ).departmentCounts,
     notice: overPurse
       ? {
         id: `overpurse-${leading.id}-${state?.currentAmount}`,

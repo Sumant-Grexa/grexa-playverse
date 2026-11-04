@@ -200,6 +200,32 @@ export type BidGate =
   | { kind: "stop"; reason: string }
   | { kind: "buzz"; message: string; womenFail: boolean; crossFail: boolean };
 
+/**
+ * Look ahead: after `incoming` joins, can the seats still to fill cover the women and departments
+ * the squad still needs? `seats` is the base share the team must buy. On the last seat this is
+ * the plain completion check. Shared by bidGate and the admin projection so they always agree.
+ */
+export function squadProjection(
+  members: MemberFact[],
+  incoming: MemberFact,
+  seats: number,
+  squadCount: number,
+) {
+  const seatsAfter = Math.max(0, seats - squadCount - 1);
+  const projected = composition([...members, incoming]);
+  const womenFail = projected.womenNeeded > seatsAfter;
+  const spreadFail = projected.departmentsNeeded > seatsAfter;
+  return {
+    seatsAfter,
+    projected,
+    womenFail,
+    spreadFail,
+    crossFail: !projected.capOk || spreadFail,
+    womenShort: Math.max(0, projected.womenNeeded - seatsAfter),
+    departmentsShort: Math.max(0, projected.departmentsNeeded - seatsAfter),
+  };
+}
+
 export function bidGate(input: {
   amount: number;
   balance: number;
@@ -216,15 +242,13 @@ export function bidGate(input: {
     return { kind: "stop", reason: "Purse is spent. Remaining seats are assigned after the auction" };
   }
   // No runway reserve: a captain may spend the whole purse on one player.
-  const seatsAfter = Math.max(0, input.seats - input.squadCount - 1);
-
-  const projected = composition([...input.members, input.incoming]);
-  // Look ahead: after this player joins, the seats still open must be able to cover the women
-  // and departments the squad still needs. On the last seat this is the plain completion check.
+  const { seatsAfter, projected, womenFail, spreadFail, crossFail } = squadProjection(
+    input.members,
+    input.incoming,
+    input.seats,
+    input.squadCount,
+  );
   const seatsWord = seatsAfter === 1 ? "1 seat" : `${seatsAfter} seats`;
-  const womenFail = projected.womenNeeded > seatsAfter;
-  const spreadFail = projected.departmentsNeeded > seatsAfter;
-  const crossFail = !projected.capOk || spreadFail;
   if (!womenFail && !crossFail) return { kind: "ok" };
 
   const parts: string[] = [];
