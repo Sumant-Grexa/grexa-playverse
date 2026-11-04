@@ -67,8 +67,9 @@ body {
 }
 
 h1.pixel-label,
-h2.pixel-label {
-  font-size: 1rem;
+h2.pixel-label,
+.pixel-label.card-label {
+  font-size: 1.5rem;
 }
 
 .bid-figure {
@@ -361,10 +362,12 @@ h2.pixel-label {
     opacity: 0;
     transform: scale(0.72);
   }
+
   55% {
     opacity: 1;
     transform: scale(1.06);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -376,6 +379,7 @@ h2.pixel-label {
     opacity: 0;
     transform: translateY(18px);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -395,10 +399,12 @@ h2.pixel-label {
     opacity: 0;
     transform: translateX(28vw) scale(0.9);
   }
+
   42% {
     opacity: 1;
     transform: translateX(28vw) scale(1);
   }
+
   100% {
     opacity: 1;
     transform: none;
@@ -419,126 +425,61 @@ h2.pixel-label {
   gap: 1.5rem;
 }
 
-.player-stamp {
-  position: absolute;
-  right: -0.35rem;
-  bottom: -0.35rem;
-  z-index: 3;
-  pointer-events: none;
-}
-
-.player-stamp-face {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 8.4rem;
-  height: 8.4rem;
-  text-align: center;
-}
-
-.player-stamp-label {
-  position: relative;
-  z-index: 1;
-  max-width: 7.1rem;
+.trait-tag {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
   font-family: var(--font-sora), sans-serif;
-  font-size: 0.72rem;
+  font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: 0.03em;
-  line-height: 1;
+  line-height: 1.2;
   text-transform: uppercase;
-  white-space: nowrap;
 }
 
-.player-stamp-collaborator .player-stamp-face {
-  color: #041018;
-  background:
-    radial-gradient(circle at 50% 48%, #e7fffd 0 62%, #7af4fb 63% 78%, #00c8d4 100%);
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 0.28rem #00d9e3,
-    0 0 0 0.44rem #041018,
-    0 10px 0 rgba(0, 0, 0, 0.35);
-  transform: rotate(-8deg);
+/* Same colours the old photo stamp used, per trait. */
+.trait-tag-collaborator {
+  color: #f0feff;
+  background: radial-gradient(circle at 50% 46%, #0b8f99 0 38%, #033a42 100%);
+  box-shadow: 0 0 0 2px #7af4fb;
 }
 
-.player-stamp-collaborator .player-stamp-label {
-  transform: rotate(8deg);
-}
-
-.player-stamp-entertainer .player-stamp-face {
+.trait-tag-entertainer {
   color: #1a1200;
   background: #f0c14a;
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 0.22rem #f6d56a,
-    0 0 0 0.4rem #1a1200,
-    0 8px 0 rgba(0, 0, 0, 0.28);
-  transform: rotate(6deg);
+  box-shadow: 0 0 0 2px #f6d56a;
 }
 
-.player-stamp-entertainer .player-stamp-label {
-  transform: rotate(-6deg);
-}
-
-.player-stamp-executer .player-stamp-face {
+.trait-tag-executer {
   color: #ff3d8a;
   background: rgba(7, 3, 24, 0.88);
-  border-radius: 50%;
-  border: 0.28rem solid #ff3d8a;
-  box-shadow: 0 0 0 0.38rem #041018, 0 8px 0 rgba(0, 0, 0, 0.3);
-  transform: rotate(-10deg);
+  box-shadow: 0 0 0 2px #ff3d8a;
 }
 
-.player-stamp-executer .player-stamp-label {
-  transform: rotate(10deg);
-}
-
-.player-stamp-risktaker .player-stamp-face {
+.trait-tag-risktaker {
   color: #fff;
   background: #c4184e;
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 0.22rem #ff8aa8,
-    0 0 0 0.4rem #041018,
-    0 8px 0 rgba(0, 0, 0, 0.32);
-  transform: rotate(7deg);
+  box-shadow: 0 0 0 2px #ff8aa8;
 }
 
-.player-stamp-risktaker .player-stamp-label {
-  transform: rotate(-7deg);
-}
-
-.player-stamp-strategist .player-stamp-face {
+.trait-tag-strategist {
   color: #f6f3ff;
   background: radial-gradient(circle at 50% 46%, #6b4cff 0 38%, #2a1680 100%);
-  border-radius: 50%;
-  border: 0.18rem solid #d4b3ff;
-  box-shadow: 0 0 0 0.32rem #12082e, 0 8px 0 rgba(0, 0, 0, 0.3);
-  transform: rotate(-6deg);
+  box-shadow: 0 0 0 2px #d4b3ff;
 }
 
-.player-stamp-strategist .player-stamp-label {
-  transform: rotate(6deg);
-}
-
-.player-stamp-other .player-stamp-face {
+.trait-tag-other {
   color: #f6f3ff;
   background: radial-gradient(circle at 50% 46%, #8a7dff, #4a4fee 58%, #24156a);
-  border-radius: 50%;
-  box-shadow: 0 0 0 0.28rem #7d2ae7, 0 8px 0 rgba(0, 0, 0, 0.3);
-  transform: rotate(-6deg);
-}
-
-.player-stamp-other .player-stamp-label {
-  transform: rotate(6deg);
+  box-shadow: 0 0 0 2px #7d2ae7;
 }
 
 .skill-chip {
   border: 2px solid rgba(0, 217, 227, 0.55);
   border-radius: 8px;
-  padding: 0.28rem 0.7rem;
+  padding: 0.32rem 0.8rem;
   color: #f6f3ff;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
 }
 
 .player-card {
@@ -642,6 +583,7 @@ h2.pixel-label {
     opacity: 0;
     transform: translateY(18px);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -679,6 +621,7 @@ h2.pixel-label {
     opacity: 0;
     transform: rotate(-22deg) scale(1.45);
   }
+
   100% {
     opacity: 1;
     transform: rotate(-14deg) scale(1);
@@ -689,12 +632,15 @@ h2.pixel-label {
   0% {
     opacity: 0;
   }
+
   10% {
     opacity: 1;
   }
+
   72% {
     opacity: 1;
   }
+
   100% {
     opacity: 0;
   }
@@ -705,6 +651,7 @@ h2.pixel-label {
     opacity: 0;
     transform: translateX(-14px);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -712,6 +659,7 @@ h2.pixel-label {
 }
 
 @media (max-width: 1023px) {
+
   .card-arrive,
   .bid-arrive {
     animation: none;
@@ -729,6 +677,7 @@ h2.pixel-label {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -739,10 +688,8 @@ h2.pixel-label {
 
 /* Board team row holding the current bid: a soft cyan-to-violet wash that fades out. */
 .team-row-leading {
-  background: linear-gradient(
-    90deg,
-    rgba(0, 217, 227, 0.16) 0%,
-    rgba(125, 42, 231, 0.12) 55%,
-    rgba(125, 42, 231, 0) 100%
-  );
+  background: linear-gradient(90deg,
+      rgba(0, 217, 227, 0.16) 0%,
+      rgba(125, 42, 231, 0.12) 55%,
+      rgba(125, 42, 231, 0) 100%);
 }

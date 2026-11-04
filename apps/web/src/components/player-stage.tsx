@@ -21,43 +21,43 @@ export function PlayerStage({ live }: { live: LivePayload }) {
     <section className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.9fr)] lg:gap-8 xl:gap-10">
       <article
         key={motionKey}
-        className="card-arrive player-card arcade-panel arcade-panel-cyan flex min-h-[420px] min-w-0 flex-col overflow-hidden"
+        className="card-arrive player-card arcade-panel arcade-panel-cyan flex h-max min-w-0 flex-col self-start overflow-hidden"
       >
         {live.player ? (
           <>
-            <div className="grid flex-1 items-start gap-5 p-5 sm:grid-cols-[minmax(220px,340px)_minmax(0,1fr)] sm:p-6">
+            <div className="grid items-start gap-5 p-5 sm:grid-cols-[minmax(220px,340px)_minmax(0,1fr)] sm:p-6">
               <div className="player-photo">
                 <div className="flex aspect-square items-center justify-center overflow-hidden rounded-md bg-hall text-paper">
                   {live.player.photoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={live.player.photoUrl} alt="" className="h-full w-full object-cover" />
+                    <img src={live.player.photoUrl} alt="" className="h-full w-full object-contain" />
                   ) : (
                     <span className="font-display text-6xl text-bid">{monogram(live.player.name)}</span>
                   )}
                 </div>
-                {badge ? (
-                  <span className={`player-stamp player-stamp-${badge.kind}`}>
-                    <span className="player-stamp-face">
-                      <span className="player-stamp-label">{badge.label}</span>
-                    </span>
-                  </span>
-                ) : null}
               </div>
               <div className="player-copy">
                 <div>
                   <h1 className="font-sans text-4xl font-semibold leading-none tracking-tight text-paper sm:text-5xl">
                     {live.player.name}
                   </h1>
+                  <br />
                   {live.player.department ? (
-                    <p className="mt-3 text-lg text-mist/80">
-                      <span className="pixel-label text-bid">Dept</span>{" "}
-                      <span className="text-paper">{live.player.department}</span>
+                    <p className="mt-4 text-xl text-mist/80">
+                      <span className="pixel-label card-label text-bid">Dept</span>{" "}
+                      <span className="text-2xl font-semibold text-paper ml-4 sm:text-3xl">{live.player.department}</span>
                     </p>
                   ) : null}
-                  <p className="pixel-label mt-5 text-bid">Skills</p>
+                  {badge ? (
+                    <>
+                      <p className="pixel-label card-label mt-5 text-bid">Trait</p>
+                      <span className={`trait-tag trait-tag-${badge.kind} mt-2`}>{badge.label}</span>
+                    </>
+                  ) : null}
+                  <p className="pixel-label card-label mt-5 text-bid">Skills</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {live.player.skills.length === 0 ? (
-                      <span className="text-mist/60">No skills listed</span>
+                      <span className="text-lg text-mist/60">No skills listed</span>
                     ) : (
                       live.player.skills.map((skill) => (
                         <span key={skill} className="skill-chip">
@@ -81,15 +81,17 @@ export function PlayerStage({ live }: { live: LivePayload }) {
             </div>
             <ul className="border-t border-white/10 px-5 py-4 sm:px-6">
               {tape.length === 0 ? (
-                <li className="text-mist/60">No bids yet</li>
+                <li className="text-lg text-mist/60">No bids yet</li>
               ) : (
                 tape.map((bid) => (
                   <li key={bid.id} className="flex items-center gap-3 py-2">
                     <Face name={bid.captainName} photoUrl={bid.captainPhotoUrl} />
+                    <span className="min-w-0 flex-1 truncate text-lg font-semibold text-paper">
+                      {bid.captainName}
+                    </span>
                     <span
-                      className={`font-sans text-2xl font-extrabold ${
-                        bid.overPurse ? "bid-slashed text-danger" : "text-paper"
-                      }`}
+                      className={`shrink-0 font-sans text-2xl font-extrabold ${bid.overPurse ? "bid-slashed text-danger" : "text-paper"
+                        }`}
                     >
                       {formatMoney(bid.amount)}
                     </span>
@@ -134,30 +136,27 @@ export function PlayerStage({ live }: { live: LivePayload }) {
               <div
                 key={team.id}
                 aria-current={leading ? "true" : undefined}
-                className={`flex items-center gap-3 border-b border-white/10 py-6 transition-colors last:border-b-0 ${
-                  leading ? "team-row-leading" : "hover:bg-hall-2/50"
-                } ${spent ? "opacity-40" : ""}`}
+                className={`flex items-center gap-3 border-b border-white/10 py-6 transition-colors last:border-b-0 ${leading ? "team-row-leading" : "hover:bg-hall-2/50"
+                  } ${spent ? "opacity-40" : ""}`}
               >
                 <Link href={`/teams/${team.id}`} className="flex min-w-0 flex-1 items-center gap-3">
                   <Face name={team.captainName ?? "No captain"} photoUrl={team.captainPhotoUrl} />
                   <span className="min-w-0 flex-1">
-                  <span
-                    className={`block truncate text-paper ${
-                      leading ? "text-xl font-black" : "text-lg font-semibold"
-                    }`}
-                  >
-                    {team.captainName ?? "No captain"}
-                  </span>
-                  <span
-                    className={`block text-sm ${
-                      (team.balance ?? 0) < 0 || (overPurse && team.id === live.state.currentTeamId)
+                    <span
+                      className={`block truncate text-paper ${leading ? "text-xl font-black" : "text-lg font-semibold"
+                        }`}
+                    >
+                      {team.captainName ?? "No captain"}
+                    </span>
+                    <span
+                      className={`block text-sm ${(team.balance ?? 0) < 0 || (overPurse && team.id === live.state.currentTeamId)
                         ? "text-danger"
                         : "text-mist/70"
-                    }`}
-                  >
-                    Remaining: {formatLakhs(team.balance ?? 0)}
-                  </span>
-                  <TeamNeeds needs={team.needs} />
+                        }`}
+                    >
+                      Remaining: {formatLakhs(team.balance ?? 0)}
+                    </span>
+                    <TeamNeeds needs={team.needs} />
                   </span>
                 </Link>
                 <RuleDot letter="W" state={team.women.state} label={team.women.label} />
@@ -203,7 +202,7 @@ function Face({ name, photoUrl }: { name: string; photoUrl: string | null }) {
     <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-hall text-sm font-bold text-bid">
       {photoUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={photoUrl} alt="" className="h-full w-full object-cover" />
+        <img src={photoUrl} alt="" className="h-full w-full rounded-full object-cover" />
       ) : (
         monogram(name)
       )}
