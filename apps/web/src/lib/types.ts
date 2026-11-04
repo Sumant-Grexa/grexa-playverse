@@ -37,6 +37,7 @@ export type LivePayload = {
     photoUrl: string | null;
     formAnswers: Record<string, string>;
     skills: string[];
+    department: string;
     badge: string | null;
     captainOf: string | null;
     lastSeason: { teamName: string; amount: number; refunded: boolean } | null;

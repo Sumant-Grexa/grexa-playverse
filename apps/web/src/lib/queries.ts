@@ -219,6 +219,7 @@ async function buildLive(
         photoUrl: mediaUrl(lot.photoPath),
         formAnswers: answers,
         skills: playerSkills(answers),
+        department: memberFact(answers).department.trim(),
         badge: playerBadge(answers),
         captainOf: captainTeam
           ? (teams.find((team) => team.id === captainTeam.teamId)?.name ?? null)

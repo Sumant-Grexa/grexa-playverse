@@ -48,6 +48,12 @@ export function PlayerStage({ live }: { live: LivePayload }) {
                   <h1 className="font-sans text-4xl font-semibold leading-none tracking-tight text-paper sm:text-5xl">
                     {live.player.name}
                   </h1>
+                  {live.player.department ? (
+                    <p className="mt-3 text-lg text-mist/80">
+                      <span className="pixel-label text-bid">Dept</span>{" "}
+                      <span className="text-paper">{live.player.department}</span>
+                    </p>
+                  ) : null}
                   <p className="pixel-label mt-5 text-bid">Skills</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {live.player.skills.length === 0 ? (
