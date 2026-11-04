@@ -7,6 +7,7 @@ import {
   addPlayerAction,
   reassignCaptainAction,
   removePlayerAction,
+  updatePlayerPriceAction,
   updateTeamAction,
 } from "@/lib/actions/admin";
 import { formatMoney } from "@/lib/format";
@@ -17,6 +18,7 @@ export function TeamEditor({ team }: { team: TeamDetail }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
 
   async function run(task: () => Promise<ActionResult>) {
     setPending(true);
@@ -25,6 +27,7 @@ export function TeamEditor({ team }: { team: TeamDetail }) {
     setPending(false);
     setMessage(result.ok ? (result.message ?? "Saved.") : result.error);
     if (result.ok) router.refresh();
+    return result;
   }
 
   return (
@@ -119,24 +122,76 @@ export function TeamEditor({ team }: { team: TeamDetail }) {
           <ul className="mt-4 divide-y divide-white/10">
             {team.members.map((member) => (
               <li key={member.tournamentPlayerId} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <span>
-                  {member.name}
-                  <span className="ml-2 text-sm text-mist/60">{formatMoney(member.amount)}</span>
-                </span>
-                <button
-                  type="button"
-                  disabled={pending}
-                  className="btn btn-danger text-sm"
-                  onClick={() => {
-                    const data = new FormData();
-                    data.set("tournamentId", team.tournamentId);
-                    data.set("teamId", team.id);
-                    data.set("tournamentPlayerId", member.tournamentPlayerId);
-                    void run(() => removePlayerAction(data));
-                  }}
-                >
-                  Remove and refund
-                </button>
+                {editingPriceId === member.tournamentPlayerId ? (
+                  <form
+                    className="flex flex-wrap items-center gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const data = new FormData(event.currentTarget);
+                      void run(() => updatePlayerPriceAction(data)).then((result) => {
+                        if (result.ok) setEditingPriceId(null);
+                      });
+                    }}
+                  >
+                    <span>{member.name}</span>
+                    <input type="hidden" name="tournamentId" value={team.tournamentId} />
+                    <input type="hidden" name="teamId" value={team.id} />
+                    <input type="hidden" name="tournamentPlayerId" value={member.tournamentPlayerId} />
+                    <input
+                      name="amount"
+                      type="number"
+                      min={0}
+                      step={1}
+                      required
+                      autoFocus
+                      defaultValue={member.amount}
+                      aria-label={`New price for ${member.name}`}
+                      className="field mt-0 w-40"
+                    />
+                    <button type="submit" disabled={pending} className="btn btn-cyan text-sm">
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      className="btn text-sm"
+                      onClick={() => setEditingPriceId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </form>
+                ) : (
+                  <span>
+                    {member.name}
+                    <span className="ml-2 text-sm text-mist/60">{formatMoney(member.amount)}</span>
+                  </span>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {editingPriceId === member.tournamentPlayerId ? null : (
+                    <button
+                      type="button"
+                      disabled={pending}
+                      className="btn btn-purple text-sm"
+                      onClick={() => setEditingPriceId(member.tournamentPlayerId)}
+                    >
+                      Edit price
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={pending}
+                    className="btn btn-danger text-sm"
+                    onClick={() => {
+                      const data = new FormData();
+                      data.set("tournamentId", team.tournamentId);
+                      data.set("teamId", team.id);
+                      data.set("tournamentPlayerId", member.tournamentPlayerId);
+                      void run(() => removePlayerAction(data));
+                    }}
+                  >
+                    Remove and refund
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
