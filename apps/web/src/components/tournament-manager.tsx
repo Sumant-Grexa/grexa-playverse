@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
+  addPlayersCsvAction,
   createTeamAction,
   deletePlayerAction,
   importRoster,
@@ -28,6 +29,7 @@ export function TournamentManager({
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [peopleMessage, setPeopleMessage] = useState<string | null>(null);
+  const [addResult, setAddResult] = useState<ActionResult | null>(null);
   const [reauctionMessage, setReauctionMessage] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [minBid, setMinBid] = useState(String(MIN_BID));
@@ -93,6 +95,49 @@ export function TournamentManager({
         </form>
       </section>
 
+      <section className="arcade-panel arcade-panel-cyan p-6">
+        <h2 className="font-sans text-2xl font-semibold text-paper">Add players</h2>
+        <p className="mt-2 max-w-2xl text-sm text-mist/70">
+          Upload a CSV of new players. Every row needs <strong>name</strong>, <strong>gender</strong>, and{" "}
+          <strong>department</strong>; any other columns (photo, player category, skills…) are kept as form
+          answers. New players join the end of the auction queue. People already in this tournament are
+          skipped and left unchanged. If any row is missing a required field, nothing is added.
+        </p>
+        <form
+          className="mt-4 flex flex-wrap items-end gap-3"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            setPending(true);
+            setAddResult(null);
+            const result = await addPlayersCsvAction(new FormData(form));
+            setPending(false);
+            setAddResult(result);
+            if (result.ok) {
+              form.reset();
+              router.refresh();
+            }
+          }}
+        >
+          <input type="hidden" name="tournamentId" value={desk.id} />
+          <label>
+            <span className="text-sm">Players CSV</span>
+            <input name="csv" type="file" accept=".csv,text/csv" required className="mt-1 block w-full" />
+          </label>
+          <button type="submit" disabled={pending} className="btn btn-cyan">
+            Add players
+          </button>
+          <a className="pb-2 text-sm underline" href="/sample/add-players.csv">
+            Sample CSV
+          </a>
+        </form>
+        {addResult ? (
+          <p className={`mt-3 ${addResult.ok ? "text-gold" : "text-danger"}`}>
+            {addResult.ok ? addResult.message : addResult.error}
+          </p>
+        ) : null}
+      </section>
+
       <section className="arcade-panel p-6">
         <h2 className="font-sans text-2xl font-semibold text-paper">Teams</h2>
         <p className="mt-2 max-w-2xl text-sm text-mist/70">
@@ -135,7 +180,9 @@ export function TournamentManager({
                   <span className="block truncate text-sm text-mist/70">
                     Captain {team.captainName ?? "not set"}
                     {" · "}
-                    {formatMoney(team.balance ?? 0)} left
+                    <span className={(team.balance ?? 0) < 0 ? "text-danger" : undefined}>
+                      {formatMoney(team.balance ?? 0)} left
+                    </span>
                     {" · "}
                     {team.squad.length} bought
                   </span>

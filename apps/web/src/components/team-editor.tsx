@@ -56,7 +56,9 @@ export function TeamEditor({ team }: { team: TeamDetail }) {
             <p className="mt-2 text-mist/70">
               Captain {team.captainName ?? "not set"}
               {" · "}
-              {formatMoney(team.remaining)} left
+              <span className={team.remaining < 0 ? "text-danger" : undefined}>
+                {formatMoney(team.remaining)} left
+              </span>
             </p>
           </div>
         </div>
@@ -219,10 +221,26 @@ export function TeamEditor({ team }: { team: TeamDetail }) {
               )}
             </select>
           </label>
+          <label>
+            <span className="text-sm">Price (₹)</span>
+            <input
+              name="amount"
+              type="number"
+              min={0}
+              step={1}
+              defaultValue={0}
+              aria-label="Price for the added player"
+              className="field w-40"
+            />
+          </label>
           <button type="submit" disabled={pending || team.available.length === 0} className="btn btn-cyan">
             Add
           </button>
         </form>
+        <p className="mt-2 max-w-2xl text-sm text-mist/60">
+          Prices set here can go past what the team has left, and the balance drops below ₹0. Only this
+          page can do that. In the live auction, a team below the opening bid still cannot bid.
+        </p>
       </section>
     </div>
   );

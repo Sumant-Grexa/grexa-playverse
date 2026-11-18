@@ -13,7 +13,9 @@ import {
 } from "../auth";
 import { finalizeBid, markUnsold, placeBid, reauctionPlayers, resetTestAuction } from "../auction";
 import { createGame, saveGame } from "../games";
+import { formatMoney } from "../format";
 import {
+  addPlayersFromCsv,
   addSquadMember,
   createTeam,
   deleteTournamentPlayer,
@@ -121,6 +123,47 @@ export async function importRoster(_prev: ActionResult | null, formData: FormDat
   }
 }
 
+export async function addPlayersCsvAction(formData: FormData): Promise<ActionResult> {
+  try {
+    await assertAdmin();
+    const file = formData.get("csv");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Choose a CSV of players to add" };
+    }
+    const result = await addPlayersFromCsv({
+      tournamentId: String(formData.get("tournamentId") ?? ""),
+      csvText: await file.text(),
+    });
+    refresh();
+    const count = result.added.length;
+    let message = `Added ${count} player${count === 1 ? "" : "s"} to the end of the auction queue.`;
+    if (result.skipped.length) {
+      const names = result.skipped.slice(0, 5).join(", ") + (result.skipped.length > 5 ? ", …" : "");
+      message += ` Skipped ${result.skipped.length} already in this tournament (${names}).`;
+    }
+    if (result.photos.saved) message += ` Saved ${result.photos.saved} photos from Google Drive.`;
+    if (result.photos.failed.length) {
+      message += ` ${result.photos.failed.length} photos could not be downloaded.`;
+    }
+    return { ok: true, message };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+function readAmount(formData: FormData, key = "amount") {
+  const text = String(formData.get(key) ?? "").replace(/[,\s₹]/g, "");
+  if (!text) return 0;
+  if (!/^\d+$/.test(text)) throw new Error("Enter the price as a whole number");
+  return Number(text);
+}
+
+function balanceNote(teamName: string, balanceAfter: number) {
+  return balanceAfter < 0
+    ? ` ${teamName} is now at ${formatMoney(balanceAfter)}.`
+    : ` ${teamName} has ${formatMoney(balanceAfter)} left.`;
+}
+
 export async function uploadPhoto(formData: FormData) {
   await assertAdmin();
   const tournamentId = String(formData.get("tournamentId") ?? "");
@@ -212,13 +255,17 @@ export async function updateTeamAction(formData: FormData): Promise<ActionResult
 export async function addPlayerAction(formData: FormData): Promise<ActionResult> {
   try {
     await assertAdmin();
-    await addSquadMember({
+    const added = await addSquadMember({
       tournamentId: String(formData.get("tournamentId") ?? ""),
       teamId: String(formData.get("teamId") ?? ""),
       tournamentPlayerId: String(formData.get("tournamentPlayerId") ?? ""),
+      amount: readAmount(formData),
     });
     refresh();
-    return { ok: true, message: "Player added to the squad." };
+    return {
+      ok: true,
+      message: `${added.name} added to the squad.${balanceNote(added.teamName, added.balanceAfter)}`,
+    };
   } catch (error) {
     return fail(error);
   }
@@ -244,14 +291,14 @@ export async function updatePlayerPriceAction(formData: FormData): Promise<Actio
     await assertAdmin();
     const text = String(formData.get("amount") ?? "").replace(/[,\s₹]/g, "");
     if (!/^\d+$/.test(text)) throw new Error("Enter the price as a whole number");
-    await updatePlayerPrice({
+    const updated = await updatePlayerPrice({
       tournamentId: String(formData.get("tournamentId") ?? ""),
       teamId: String(formData.get("teamId") ?? ""),
       tournamentPlayerId: String(formData.get("tournamentPlayerId") ?? ""),
       amount: Number(text),
     });
     refresh();
-    return { ok: true, message: "Price updated." };
+    return { ok: true, message: `Price updated.${balanceNote(updated.teamName, updated.balanceAfter)}` };
   } catch (error) {
     return fail(error);
   }

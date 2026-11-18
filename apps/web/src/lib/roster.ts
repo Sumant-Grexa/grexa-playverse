@@ -142,6 +142,126 @@ export async function importSettledCsv(input: {
   return { people: rows.length, photos };
 }
 
+/** Columns every row of the add-players CSV must fill in. */
+export const ADD_PLAYERS_REQUIRED = ["name", "gender", "department"] as const;
+
+/**
+ * Adds new people to a tournament from a CSV without touching anyone already in it.
+ * They join the end of the auction queue. Existing names are skipped and reported.
+ */
+export async function addPlayersFromCsv(input: { tournamentId: string; csvText: string }) {
+  const parsed = parseCsv(input.csvText);
+  if (parsed.length === 0) throw new Error("The CSV has no people");
+  const headers = new Set(Object.keys(parsed[0] ?? {}).map((key) => key.trim().toLowerCase()));
+  const missingColumns = ADD_PLAYERS_REQUIRED.filter((name) => !headers.has(name));
+  if (missingColumns.length > 0) {
+    throw new Error(`The CSV needs these columns: ${missingColumns.join(", ")}`);
+  }
+
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  const rows = parsed.flatMap((row, index) => {
+    const line = index + 2;
+    const empty = ADD_PLAYERS_REQUIRED.filter((name) => !column(row, name).trim());
+    if (empty.length > 0) {
+      problems.push(`Row ${line} is missing ${empty.join(", ")}`);
+      return [];
+    }
+    const name = column(row, "name").trim();
+    const key = name.toLowerCase();
+    if (seen.has(key)) {
+      problems.push(`Row ${line}: ${name} appears more than once`);
+      return [];
+    }
+    seen.add(key);
+    const formAnswers: Record<string, string> = {};
+    for (const [header, value] of Object.entries(row)) {
+      if (KNOWN.has(header.toLowerCase())) continue;
+      if (value.trim()) formAnswers[header] = value.trim();
+    }
+    return [{ name, wants: flag(column(row, "wantsToBeCaptain")) ?? false, formAnswers }];
+  });
+  if (problems.length > 0) {
+    const shown = problems.slice(0, 5).join(". ") + (problems.length > 5 ? `. …and ${problems.length - 5} more` : "");
+    throw new Error(`Nothing was added. ${shown}.`);
+  }
+
+  const db = getDb();
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from tournaments where id = ${input.tournamentId} for update`);
+    const [tournament] = await tx
+      .select({ id: tournaments.id })
+      .from(tournaments)
+      .where(eq(tournaments.id, input.tournamentId))
+      .limit(1);
+    if (!tournament) throw new Error("Tournament not found");
+
+    const existingPeople = await tx.select().from(people);
+    const peopleByName = new Map(existingPeople.map((person) => [person.name.trim().toLowerCase(), person]));
+    const existingPlayers = await tx
+      .select({ personId: tournamentPlayers.personId })
+      .from(tournamentPlayers)
+      .where(eq(tournamentPlayers.tournamentId, input.tournamentId));
+    const inTournament = new Set(existingPlayers.map((player) => player.personId));
+    const [orderRow] = await tx
+      .select({ last: sql<number>`coalesce(max(${tournamentPlayers.auctionOrder}), -1)::int` })
+      .from(tournamentPlayers)
+      .where(eq(tournamentPlayers.tournamentId, input.tournamentId));
+    let order = Number(orderRow?.last ?? -1);
+
+    const added: string[] = [];
+    const skipped: string[] = [];
+    for (const row of rows) {
+      let person = peopleByName.get(row.name.toLowerCase());
+      if (person && inTournament.has(person.id)) {
+        skipped.push(row.name);
+        continue;
+      }
+      if (!person) {
+        const [created] = await tx.insert(people).values({ name: row.name }).returning();
+        person = created;
+        peopleByName.set(row.name.toLowerCase(), created);
+      }
+      order += 1;
+      await tx.insert(tournamentPlayers).values({
+        tournamentId: input.tournamentId,
+        personId: person.id,
+        wantsToBeCaptain: row.wants,
+        formAnswers: row.formAnswers,
+        auctionOrder: order,
+        status: "available",
+      });
+      added.push(row.name);
+    }
+
+    if (added.length > 0) {
+      const [state] = await tx
+        .select({ status: auctionState.status })
+        .from(auctionState)
+        .where(eq(auctionState.tournamentId, input.tournamentId))
+        .limit(1);
+      if (!state) {
+        await tx.insert(auctionState).values({ tournamentId: input.tournamentId, status: "idle" });
+        await openNextLot(tx, input.tournamentId);
+      } else if (state.status === "idle") {
+        await openNextLot(tx, input.tournamentId);
+      }
+      await tx.insert(activityLog).values({
+        tournamentId: input.tournamentId,
+        actor: "admin",
+        action: "roster.add",
+        entityType: "tournament",
+        entityId: input.tournamentId,
+        payload: { added, skipped },
+      });
+    }
+    return { added, skipped };
+  });
+
+  const photos = result.added.length > 0 ? await importDrivePhotos(input.tournamentId) : { saved: 0, failed: [] };
+  return { ...result, photos };
+}
+
 export async function reassignCaptain(input: {
   tournamentId: string;
   teamId: string;
@@ -330,7 +450,7 @@ export async function updatePlayerPrice(input: {
     throw new Error("Enter the price as a whole number");
   }
   const db = getDb();
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await tx.execute(sql`select id from tournaments where id = ${input.tournamentId} for update`);
     const [team] = await tx
       .select()
@@ -365,14 +485,9 @@ export async function updatePlayerPrice(input: {
       )
       .limit(1);
 
-    const [spentRow] = await tx
-      .select({ spent: sql<number>`coalesce(sum(${bids.amount}), 0)::int` })
-      .from(bids)
-      .where(and(eq(bids.tournamentTeamId, input.teamId), eq(bids.status, "won")));
-    const spentAfter = Number(spentRow?.spent ?? 0) - (won?.amount ?? 0) + input.amount;
-    if (spentAfter > openingPurse(team.openingBalance)) {
-      throw new Error(`${team.name} cannot afford that price`);
-    }
+    // Admin-set prices may exceed the purse; the balance then goes negative.
+    // Live bidding is unaffected: bidGate still locks out any team below the opening bid.
+    const balanceAfter = await balanceAfterPrice(tx, team, input.amount - (won?.amount ?? 0));
 
     if (won) {
       await tx.update(bids).set({ amount: input.amount }).where(eq(bids.id, won.id));
@@ -397,9 +512,23 @@ export async function updatePlayerPrice(input: {
         teamName: team.name,
         fromAmount: won?.amount ?? 0,
         toAmount: input.amount,
+        balanceAfter,
       },
     });
+    return { balanceAfter, teamName: team.name };
   });
+}
+
+async function balanceAfterPrice(
+  tx: Tx,
+  team: { id: string; openingBalance: number | null },
+  delta: number,
+) {
+  const [spentRow] = await tx
+    .select({ spent: sql<number>`coalesce(sum(${bids.amount}), 0)::int` })
+    .from(bids)
+    .where(and(eq(bids.tournamentTeamId, team.id), eq(bids.status, "won")));
+  return openingPurse(team.openingBalance) - Number(spentRow?.spent ?? 0) - delta;
 }
 
 /** Removes a player from the tournament entirely (bids and squad seat go with it). */
@@ -726,9 +855,13 @@ export async function addSquadMember(input: {
   tournamentId: string;
   teamId: string;
   tournamentPlayerId: string;
+  /** Price the admin assigns. May exceed what the team has left; the balance then goes negative. */
+  amount?: number;
 }) {
+  const amount = input.amount ?? 0;
+  if (!Number.isInteger(amount) || amount < 0) throw new Error("Enter the price as a whole number");
   const db = getDb();
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await tx.execute(sql`select id from tournaments where id = ${input.tournamentId} for update`);
     const [team] = await tx
       .select()
@@ -773,17 +906,19 @@ export async function addSquadMember(input: {
       tournamentId: input.tournamentId,
       tournamentPlayerId: player.id,
       tournamentTeamId: input.teamId,
-      amount: 0,
+      amount,
       status: "won",
     });
+    const balanceAfter = await balanceAfterPrice(tx, team, 0);
     await tx.insert(activityLog).values({
       tournamentId: input.tournamentId,
       actor: "admin",
       action: "squad.add",
       entityType: "player",
       entityId: player.id,
-      payload: { playerName: player.name, teamName: team.name },
+      payload: { playerName: player.name, teamName: team.name, amount, balanceAfter },
     });
+    return { name: player.name, teamName: team.name, balanceAfter };
   });
 }
 
