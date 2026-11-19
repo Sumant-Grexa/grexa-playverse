@@ -171,6 +171,7 @@ export type TournamentDesk = {
       personId: string;
       name: string;
       photoUrl: string | null;
+      department: string;
       status: "available" | "on_block" | "sold" | "unsold";
       wantsToBeCaptain: boolean;
       isCaptain: boolean;
@@ -210,6 +211,8 @@ export type TeamDetail = {
   captainName: string | null;
   captainPhotoUrl: string | null;
   captainPersonId: string | null;
+  /** The captain's own player entry in this tournament, for linking to their page. */
+  captainPlayerId: string | null;
   captainGender: string;
   captainDepartment: string;
   departments: string[];
@@ -221,8 +224,22 @@ export type TeamDetail = {
     tournamentPlayerId: string;
     name: string;
     photoUrl: string | null;
+    department: string;
     amount: number;
   }[];
   available: { tournamentPlayerId: string; name: string }[];
   people: { personId: string; name: string }[];
+};
+
+export type PlayerDetail = {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+  department: string;
+  badge: string | null;
+  skills: string[];
+  status: "available" | "on_block" | "sold" | "unsold";
+  tournamentName: string;
+  team: { id: string; name: string; logoUrl: string | null; role: "captain" | "player" } | null;
+  soldFor: number | null;
 };

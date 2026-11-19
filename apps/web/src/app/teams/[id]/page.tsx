@@ -31,7 +31,15 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
             <div>
               <h1 className="font-sans text-4xl font-semibold text-paper">{team.name}</h1>
               <p className="mt-2 text-mist/70">
-                Captain {team.captainName ?? "not set"}
+                Captain{" "}
+                {team.captainName && team.captainPlayerId ? (
+                  <Link href={`/players/${team.captainPlayerId}`} className="text-paper underline">
+                    {team.captainName}
+                  </Link>
+                ) : (
+                  (team.captainName ?? "not set")
+                )}
+                {team.captainDepartment ? ` (${team.captainDepartment})` : null}
                 {" · "}
                 {formatMoney(team.remaining)} left
               </p>
@@ -45,9 +53,27 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
           ) : (
             <ul className="mt-4 divide-y divide-white/10">
               {team.members.map((member) => (
-                <li key={member.tournamentPlayerId} className="flex items-center justify-between gap-3 py-3">
-                  <span className="text-paper">{member.name}</span>
-                  <span className="text-bid">{formatMoney(member.amount)}</span>
+                <li key={member.tournamentPlayerId}>
+                  <Link
+                    href={`/players/${member.tournamentPlayerId}`}
+                    className="-mx-2 flex items-center gap-3 rounded-md px-2 py-3 transition-colors hover:bg-hall-2/50"
+                  >
+                    <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-hall text-sm font-bold text-bid">
+                      {member.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={member.photoUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        monogram(member.name)
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold text-paper">{member.name}</span>
+                      <span className="block truncate text-sm text-mist/70">
+                        {member.department || "Department not set"}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-bid">{formatMoney(member.amount)}</span>
+                  </Link>
                 </li>
               ))}
             </ul>

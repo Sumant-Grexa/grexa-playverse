@@ -36,6 +36,7 @@ import { mediaUrl } from "./uploads";
 import type {
   LeaderboardPayload,
   LivePayload,
+  PlayerDetail,
   PublicTeamList,
   TeamDetail,
   TournamentDesk,
@@ -791,6 +792,7 @@ export async function getTournamentDesk(selectedId?: string): Promise<Tournament
         personId: player.personId,
         name: player.name,
         photoUrl: mediaUrl(player.photoPath),
+        department: memberFact(player.formAnswers).department.trim(),
         status: player.status,
         wantsToBeCaptain: player.wantsToBeCaptain,
         isCaptain: captainPersonIds.has(player.personId),
@@ -848,6 +850,9 @@ export async function getTeamDetail(teamId: string): Promise<TeamDetail | null> 
     captainName: card?.captainName ?? null,
     captainPhotoUrl: card?.captainPhotoUrl ?? null,
     captainPersonId: deskTeam?.captainPersonId ?? null,
+    captainPlayerId:
+      selected?.players.find((player) => player.personId === deskTeam?.captainPersonId)?.tournamentPlayerId ??
+      null,
     captainGender: deskTeam?.captainGender ?? "",
     captainDepartment: deskTeam?.captainDepartment ?? "",
     departments: selected?.departments ?? [],
@@ -855,12 +860,16 @@ export async function getTeamDetail(teamId: string): Promise<TeamDetail | null> 
     openingBalance: openingPurse(team.openingBalance),
     squadCount: card?.squadCount ?? 0,
     checks: deskTeam?.checks ?? [],
-    members: (deskTeam?.squad ?? []).map((member) => ({
-      tournamentPlayerId: member.tournamentPlayerId,
-      name: member.name,
-      photoUrl: selected?.players.find((player) => player.tournamentPlayerId === member.tournamentPlayerId)?.photoUrl ?? null,
-      amount: member.refundAmount,
-    })),
+    members: (deskTeam?.squad ?? []).map((member) => {
+      const player = selected?.players.find((item) => item.tournamentPlayerId === member.tournamentPlayerId);
+      return {
+        tournamentPlayerId: member.tournamentPlayerId,
+        name: member.name,
+        photoUrl: player?.photoUrl ?? null,
+        department: player?.department ?? "",
+        amount: member.refundAmount,
+      };
+    }),
     available: (selected?.players ?? [])
       .filter(
         (player) =>
@@ -870,6 +879,82 @@ export async function getTeamDetail(teamId: string): Promise<TeamDetail | null> 
       )
       .map((player) => ({ tournamentPlayerId: player.tournamentPlayerId, name: player.name })),
     people: (selected?.players ?? []).map((player) => ({ personId: player.personId, name: player.name })),
+  };
+}
+
+export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | null> {
+  if (!isUuid(playerId)) return null;
+  const db = getDb();
+  const [row] = await db
+    .select({
+      id: tournamentPlayers.id,
+      personId: people.id,
+      name: people.name,
+      photoPath: people.photoPath,
+      formAnswers: tournamentPlayers.formAnswers,
+      status: tournamentPlayers.status,
+      tournamentId: tournaments.id,
+      tournamentName: tournaments.name,
+    })
+    .from(tournamentPlayers)
+    .innerJoin(people, eq(people.id, tournamentPlayers.personId))
+    .innerJoin(tournaments, eq(tournaments.id, tournamentPlayers.tournamentId))
+    .where(eq(tournamentPlayers.id, playerId))
+    .limit(1);
+  if (!row) return null;
+
+  const teamColumns = { id: tournamentTeams.id, name: tournamentTeams.name, logoPath: tournamentTeams.logoPath };
+  const [captainOf] = await db
+    .select(teamColumns)
+    .from(captaincies)
+    .innerJoin(tournamentTeams, eq(tournamentTeams.id, captaincies.tournamentTeamId))
+    .where(
+      and(
+        eq(captaincies.personId, row.personId),
+        eq(tournamentTeams.tournamentId, row.tournamentId),
+        isNull(captaincies.endedAt),
+      ),
+    )
+    .limit(1);
+  const [squadOf] = captainOf
+    ? []
+    : await db
+        .select(teamColumns)
+        .from(squadMembers)
+        .innerJoin(tournamentTeams, eq(tournamentTeams.id, squadMembers.tournamentTeamId))
+        .where(and(eq(squadMembers.tournamentPlayerId, row.id), isNull(squadMembers.leftAt)))
+        .limit(1);
+  const team = captainOf ?? squadOf ?? null;
+
+  const [won] = squadOf
+    ? await db
+        .select({ amount: bids.amount })
+        .from(bids)
+        .where(
+          and(
+            eq(bids.tournamentPlayerId, row.id),
+            eq(bids.tournamentTeamId, squadOf.id),
+            eq(bids.status, "won"),
+          ),
+        )
+        .orderBy(desc(bids.createdAt))
+        .limit(1)
+    : [];
+
+  const answers = row.formAnswers ?? {};
+  return {
+    id: row.id,
+    name: row.name,
+    photoUrl: mediaUrl(row.photoPath),
+    department: memberFact(answers).department.trim(),
+    badge: playerBadge(answers),
+    skills: playerSkills(answers),
+    status: row.status,
+    tournamentName: row.tournamentName,
+    team: team
+      ? { id: team.id, name: team.name, logoUrl: mediaUrl(team.logoPath), role: captainOf ? "captain" : "player" }
+      : null,
+    soldFor: won?.amount ?? null,
   };
 }
 
